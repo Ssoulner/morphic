@@ -161,8 +161,9 @@ impl<'a, 'b> Context<'a, 'b> {
                 }
                 Variant::HASKELL => {
                     self.write_type(elem_type, Precedence::App)?;
-                    self.write(" -> Array ")?;
+                    self.write(" -> [")?;
                     self.write_type(elem_type, Precedence::Var)?;
+                    self.write("]")?;
                 }
             },
             Type::Tuple(types) => {
