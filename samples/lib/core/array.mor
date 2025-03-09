@@ -72,6 +72,13 @@ foldl_rec(arr: Array t, accum: u, f: (u, t) -> u, i: Int): u =
 pub foldl(arr: Array t, accum: accum, f: (accum, t) -> accum): accum =
   foldl_rec(arr, accum, f, 0)
 
+pub reduce(arr: Array t, f: (t, t) -> t): t =
+  if is_empty(arr) {
+    panic("cannot reduce empty array")
+  } else {
+    foldl_rec(arr, get(arr, 0), f, 1)
+  }
+
 map_rec(arr: Array t, f: t -> u, i: Int): Array u =
   if i < 0 {
     []
