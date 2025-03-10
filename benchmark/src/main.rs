@@ -822,7 +822,7 @@ fn main() {
     // sample_nqueens_iterative();
     // sample_nqueens_functional();
 
-    // sample_parse_json();
+    sample_parse_json();
 
     sample_minhs();
     
