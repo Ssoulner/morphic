@@ -503,6 +503,26 @@ eval(minhs: MinHS): MinHS =
     _ -> minhs
   }
 
+run_program(source: Array Byte): Result MinHS (Array Byte) =
+  let expr_opt = parse_expression(source) in
+    match expr_opt {
+      None -> Err("Parse error"),
+      Some(named_expr) ->
+        let expr = dename_expression(named_expr) in
+        let env = Hashmap.empty(id, \(i1, i2) -> i1 = i2) in
+        match infer_type(env, expr) {
+          Ok(typ) -> Ok(lift_expression(expr, \i -> Err(i)) |> eval()),
+          Err(e, t1, t2) ->
+            let message = "Type error:"
+                        |> String.concat(expression_print(e))
+                        |> String.concat(" has type ")
+                        |> String.concat(type_print(t2))
+                        |> String.concat(" but expected type ")
+                        |> String.concat(type_print(t1)) in
+            Err(message)
+        }
+    }
+
 proc main (): () =
   // let str = do input() in
   // let str = "if true then 5 else 3" in
@@ -515,27 +535,7 @@ proc main (): () =
   // let str = "let f :: (int -> int) -> int -> int = fun twice(f) :: (int -> int) -> int -> int = fun twice_inner(x) :: int -> int = f (f x) in f (+ 5) 4" in
   let num = do input() in // 15000
   let str = "(fun f(x) :: (int -> int) = if = x " |> String.concat(num) |> String.concat(" then x else f (+ x 1)) 10") in
-  let expr_opt = parse_expression(str) in
-    match expr_opt {
-      None -> do output("Parse error"),
-      Some(named_expr) ->
-        let expr = dename_expression(named_expr) in
-        do output("Parsed expression:\n")
-        then do output(expression_print(expr))
-        then let env = Hashmap.empty(id, \(i1, i2) -> i1 = i2) in
-        match infer_type(env, expr) {
-          Ok(typ) ->
-            do output("\nwith type:\n")
-            then do output(type_print(typ))
-            then do output("\nevaluating to:\n")
-            then let minhs = lift_expression(expr, \i -> Err(i)) in
-            do output(minhs_print(eval(minhs))),
-          Err(e, t1, t2) ->
-            do output("\nType error:\n")
-            then do output(expression_print(e))
-            then do output("\nhas type:\n")
-            then do output(type_print(t2))
-            then do output("\nbut expected type:\n")
-            then do output(type_print(t1))
-        }
-    }
+  match run_program(str) {
+    Ok(res) -> do output(minhs_print(res)),
+    Err(message) -> do output(message)
+  }
