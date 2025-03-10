@@ -257,6 +257,7 @@ impl Config {
                             .short('o')
                             .long("output-path")
                             .help("Place the output executable at this path.")
+                            .value_parser(clap::value_parser!(OsString))
                     )
                     .arg(
                         // If you ever change the CLI syntax for profiling, you need to grep for
