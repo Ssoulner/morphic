@@ -1,5 +1,3 @@
--- module Main where
-
 import Data.Bits ((.&.), (.|.), shiftL, shiftR)
 import Data.Char as C
 import Data.Int (Int64, Int8)
@@ -38,17 +36,17 @@ intrinsicReserve = const
 intrinsicReplace :: (a -> Vector a) -> a -> Vector a
 intrinsicReplace = id
 
-_pv_string :: [Word8] -> String
-_pv_string = map (C.chr . fromIntegral)
-_string_pv :: String -> [Word8]
-_string_pv = map (fromIntegral . C.ord)
+_pv_string :: Vector Word8 -> String
+_pv_string = V.foldr (:) [] . fmap (C.chr . fromIntegral)
+_string_pv :: String -> Vector Word8
+_string_pv = V.fromList . map (fromIntegral . C.ord)
 
 -- IO
-input :: () -> [Word8]
+input :: () -> Vector Word8
 input _ = unsafePerformIO $ do
   line <- getLine
   return $ _string_pv line
-output :: [Word8] -> ()
+output :: Vector Word8 -> ()
 output s = unsafePerformIO $ putStr $ _pv_string s
-panic :: [Word8] -> a
+panic :: Vector Word8 -> a
 panic = error . _pv_string
