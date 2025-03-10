@@ -505,13 +505,16 @@ eval(minhs: MinHS): MinHS =
 
 proc main (): () =
   // let str = do input() in
+  // let str = "if true then 5 else 3" in
   // let str = "let x :: int = 5 in x" in
   // let str = "let f :: int -> int = + 5 in f (+ 5 (f 10))" in
   // let str = "(fun $1($2) :: int -> int = + 1 $2) 5" in
   // let str = "let $1 :: int -> int = (fun $1($2) :: int -> int = + 1 $2) in $1 5" in
   // let str = "(fun $1($2) :: (int -> int) -> int -> int = (fun $3($4) :: int -> int = $2 ($2 $4)))" in
   // let str = "let $1 :: (int -> int) -> int -> int = fun $1($2) :: (int -> int) -> int -> int = fun $3($4) :: int -> int = $2 ($2 $4) in $1 (+ 5) 4" in
-  let str = "let f :: (int -> int) -> int -> int = fun twice(f) :: (int -> int) -> int -> int = fun twice_inner(x) :: int -> int = f (f x) in f (+ 5) 4" in
+  // let str = "let f :: (int -> int) -> int -> int = fun twice(f) :: (int -> int) -> int -> int = fun twice_inner(x) :: int -> int = f (f x) in f (+ 5) 4" in
+  let num = do input() in // 15000
+  let str = "(fun f(x) :: (int -> int) = if = x " |> String.concat(num) |> String.concat(" then x else f (+ x 1)) 10") in
   let expr_opt = parse_expression(str) in
     match expr_opt {
       None -> do output("Parse error"),
