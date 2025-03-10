@@ -1,9 +1,10 @@
 module Main where
 
 import Data.Word (Word8)
-import Data.Bits ((.&.), (.|.), shiftL, shiftR)
+import Data.Bits ((.&.), (.|.), shiftL, shiftR, xor)
 import Data.Int (Int64, Int8)
 import Data.Char as C
+import System.IO.Unsafe (unsafePerformIO)
 
 intrinsic_ByteToIntSigned :: Word8 -> Int64
 intrinsic_ByteToIntSigned x = fromIntegral (fromIntegral x :: Int8)
@@ -30,8 +31,10 @@ _string_pv = map (fromIntegral . C.ord)
 
 -- IO
 input :: () -> [Word8]
-input _ = undefined
-output :: [Word8] -> IO ()
-output = putStrLn . _pv_string
+input _ = unsafePerformIO $ do
+  line <- getLine
+  return $ _string_pv line
+output :: [Word8] -> ()
+output s = unsafePerformIO $ putStr $ _pv_string s
 panic :: [Word8] -> a
 panic = error . _pv_string
