@@ -34,6 +34,7 @@ struct Context<'a, 'b> {
     writer: &'b mut dyn Write,
     indentation: usize,
     num_locals: usize,
+    num_ignored: usize,
     prog: &'a Program,
 }
 
@@ -160,10 +161,12 @@ impl<'a, 'b> Context<'a, 'b> {
                     self.write(" PersistentArray.array")?;
                 }
                 Variant::HASKELL => {
+                    self.write("(")?;
                     self.write_type(elem_type, Precedence::App)?;
                     self.write(" -> [")?;
                     self.write_type(elem_type, Precedence::Var)?;
                     self.write("]")?;
+                    self.write(")")?;
                 }
             },
             Type::Tuple(types) => {
@@ -325,7 +328,13 @@ impl<'a, 'b> Context<'a, 'b> {
     fn write_pattern_rec(&mut self, p: &Pattern, write_type: bool) -> io::Result<usize> {
         match p {
             Pattern::Any(_) => {
-                self.write("_")?;
+                if self.variant == Variant::HASKELL {
+                    self.write("l_")?;
+                    self.write(self.num_ignored)?;
+                    self.num_ignored += 1;
+                } else {
+                    self.write("_")?;
+                }
                 Ok(0)
             }
 
@@ -890,8 +899,12 @@ impl<'a, 'b> Context<'a, 'b> {
                         Variant::HASKELL => {}
                     }
                 }
+                if self.variant == Variant::MORPHIC {
+                    self.write("}")?;
+                }
             }
             Expr::LetMany(bindings, expr) => {
+                self.num_ignored = 0;
                 let mut total_locals = 0;
                 self.write("let")?;
                 self.add_indent();
@@ -917,8 +930,9 @@ impl<'a, 'b> Context<'a, 'b> {
                         Variant::HASKELL => {
                             if i == 0 {
                                 self.write(" ")?;
+                                self.add_indent();
                             } else {
-                                self.write("; ")?;
+                                self.writeln()?;
                             }
                         }
                     }
@@ -935,7 +949,13 @@ impl<'a, 'b> Context<'a, 'b> {
                 
                 match self.variant {
                     Variant::HASKELL => {
+                        self.remove_indent();
                         self.write(" in ")?;
+                        for i in 0..self.num_ignored {
+                            self.write("l_")?;
+                            self.write(i)?;
+                            self.write(" `seq` ")?;
+                        }
                         self.write_expr(expr, Precedence::Fun)?;
                     },
                     _ => {
@@ -1417,9 +1437,6 @@ impl<'a, 'b> Context<'a, 'b> {
                                         
                                     self.write_type(&pattern_to_type(&func.arg), Precedence::Top)?;
                                     self.write(" -> ")?;
-                                    if func.purity == Purity::Impure {
-                                        self.write("IO ")?;
-                                    }
                                     self.write_type(&func.ret_type, Precedence::Top)?;
                                     self.writeln()?;
                                     
@@ -1432,6 +1449,10 @@ impl<'a, 'b> Context<'a, 'b> {
                             self.write("and ")?;
                         }
                     }
+                }
+
+                if self.variant != Variant::HASKELL {
+                    self.write_custom_func_id(*id)?;
                 }
 
                 let num_locals = match self.variant {
@@ -1551,6 +1572,8 @@ impl<'a, 'b> Context<'a, 'b> {
                 self.write("proc main(): () = do main_wrapper_")?;
             }
             Variant::HASKELL => {
+                self.write("main :: IO ()")?;
+                self.writeln()?;
                 self.write("main = main_wrapper_")?;
             }
         }
@@ -1558,7 +1581,7 @@ impl<'a, 'b> Context<'a, 'b> {
         match self.variant {
             Variant::OCAML | Variant::SML => self.write(" ();")?,
             Variant::MORPHIC => self.write("()")?,
-            Variant::HASKELL => self.write(" ()")?,
+            Variant::HASKELL => self.write(" () `seq` return ()")?,
         }
         self.writeln()?;
 
@@ -1757,6 +1780,7 @@ pub fn write_sml_program(w: &mut dyn Write, program: &Program) -> io::Result<()>
         writer: w,
         indentation: 0,
         num_locals: 0,
+        num_ignored: 0,
         prog: program,
     };
     context.write_program(program)?;
@@ -1769,6 +1793,7 @@ pub fn write_ocaml_program(w: &mut dyn Write, program: &Program) -> io::Result<(
         writer: w,
         indentation: 0,
         num_locals: 0,
+        num_ignored: 0,
         prog: program,
     };
     context.write_program(program)?;
@@ -1781,6 +1806,7 @@ pub fn write_morphic_program(w: &mut dyn Write, program: &Program) -> io::Result
         writer: w,
         indentation: 0,
         num_locals: 0,
+        num_ignored: 0,
         prog: program,
     };
     context.write_program(program)?;
@@ -1793,6 +1819,7 @@ pub fn write_haskell_program(w: &mut dyn Write, program: &Program) -> io::Result
         writer: w,
         indentation: 0,
         num_locals: 0,
+        num_ignored: 0,
         prog: program,
     };
     context.write_program(program)?;
