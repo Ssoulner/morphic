@@ -708,9 +708,12 @@ impl<'a, 'b> Context<'a, 'b> {
                 },
             },
             Expr::IoOp(io_op) => match io_op {
-                IoOp::Input => match self.variant {
-                    Variant::HASKELL => self.write("input")?,
-                    _ => self.write("input ()")?,
+                IoOp::Input => {
+                    if self.variant == Variant::MORPHIC {
+                        self.write("do input ()")?;
+                    } else {
+                        self.write("input ()")?
+                    }
                 },
                 IoOp::Output(a) => match self.variant {
                     Variant::MORPHIC => {
@@ -839,7 +842,11 @@ impl<'a, 'b> Context<'a, 'b> {
                     }
                 }
                 for (i, (pattern, expr)) in patterns.iter().enumerate() {
-                    self.writeln()?;
+                    if self.variant != Variant::HASKELL {
+                        self.writeln()?;
+                    } else if i != 0 {
+                        self.write("; ")?;
+                    }
                     match self.variant {
                         Variant::OCAML | Variant::SML => {
                             if i == 0 {
@@ -850,7 +857,9 @@ impl<'a, 'b> Context<'a, 'b> {
                         }
                         Variant::MORPHIC => {}
                         Variant::HASKELL => {
-                            self.write("  ")?;
+                            if i == 0 {
+                                self.write(" ")?;
+                            }
                         }
                     }
 
@@ -930,9 +939,8 @@ impl<'a, 'b> Context<'a, 'b> {
                         Variant::HASKELL => {
                             if i == 0 {
                                 self.write(" ")?;
-                                self.add_indent();
                             } else {
-                                self.writeln()?;
+                                self.write("; ")?;
                             }
                         }
                     }
@@ -949,7 +957,6 @@ impl<'a, 'b> Context<'a, 'b> {
                 
                 match self.variant {
                     Variant::HASKELL => {
-                        self.remove_indent();
                         self.write(" in ")?;
                         for i in 0..self.num_ignored {
                             self.write("l_")?;
@@ -1446,7 +1453,9 @@ impl<'a, 'b> Context<'a, 'b> {
                                 }
                             }
                         } else {
-                            self.write("and ")?;
+                            if self.variant != Variant::HASKELL {
+                                self.write("and ")?;
+                            }
                         }
                     }
                 }
