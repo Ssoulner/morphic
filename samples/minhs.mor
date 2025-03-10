@@ -100,6 +100,8 @@ p_char: Parse Byte =
 p_name: Parse (Array Byte) =
   spaced(Parse.many1(p_char))
   |> Parse.guard(\name -> !String.equal(name, "in"))
+  |> Parse.guard(\name -> !String.equal(name, "then"))
+  |> Parse.guard(\name -> !String.equal(name, "else"))
 
 p_var: Parse NamedExpression =
   Parse.map(p_name, \name -> NVar(name))
@@ -120,8 +122,8 @@ p_op: Parse Operator =
     126b -> Not,
     38b -> And,
     124b -> Or,
-    60b -> Eq,
-    61b -> Lt,
+    60b -> Lt,
+    61b -> Eq,
     _ -> panic("unreachable code")
   })
 
@@ -139,7 +141,7 @@ p_atom(): Parse NamedExpression =
 p_word(word: Array Byte): Parse () =
   spaced(Parse.lit(word)) |> Parse.map(\_ -> ())
 
-// fun $f($i) :: typ = e
+// fun f(x) :: typ = e
 p_fun(): Parse NamedExpression =
   Parse.and_then(Parse.skip_pre(p_word("fun"), p_name)) <| \f ->
   Parse.and_then(paren(p_name)) <| \p ->
@@ -147,7 +149,7 @@ p_fun(): Parse NamedExpression =
   Parse.and_then(Parse.skip_pre(p_word("="), lazy(p_apply))) <| \e_body ->
   Parse.pure(NFun(f, p, typ, e_body),)
 
-// let $i :: typ = e1 in e2
+// let x :: typ = e1 in e2
 p_let(): Parse NamedExpression =
   Parse.and_then(Parse.skip_pre(p_word("let"), p_name)) <| \x ->
   Parse.and_then(p_type()) <| \typ ->
@@ -155,15 +157,22 @@ p_let(): Parse NamedExpression =
   Parse.and_then(Parse.skip_pre(p_word("in"), lazy(p_apply))) <| \e_body ->
   Parse.pure(NLet(x, typ, e_val, e_body))
 
+// if c then e1 else e2
+p_if(): Parse NamedExpression =
+  Parse.and_then(Parse.skip_pre(p_word("if"), lazy(p_apply))) <| \e_cond ->
+  Parse.and_then(Parse.skip_pre(p_word("then"), lazy(p_apply))) <| \e_true ->
+  Parse.and_then(Parse.skip_pre(p_word("else"), lazy(p_apply))) <| \e_false ->
+  Parse.pure(NIf(e_cond, e_true, e_false))
+
 p_expr(): Parse NamedExpression =
-  p_let() |> Parse.or(lazy(p_fun)) |> Parse.or(lazy(p_atom))
+  p_let() |> Parse.or(lazy(p_fun)) |> Parse.or(lazy(p_if)) |> Parse.or(lazy(p_atom))
 
 p_apply(): Parse NamedExpression =
   Parse.many1(p_expr())
   |> Parse.map(\exprs -> reduce(exprs, NApply))
 
 parse_expression(str: Array Byte): Option NamedExpression =
-  Parse.parse_all(str, p_let())
+  Parse.parse_all(str, p_apply())
 
 type Type {
   Dummy,
@@ -194,13 +203,14 @@ type_print(typ: Type): Array Byte =
   }
 
 type NamedExpression {
-  NVar(Array Byte), // variables are identified by number
+  NVar(Array Byte),
   NNum(Int),
   NBool(Bool),
   NOp(Operator),
   NApply(NamedExpression, NamedExpression),
-  NLet(Array Byte, Type, NamedExpression, NamedExpression), // let x :: t = v in e
-  NFun(Array Byte, Array Byte, Type, NamedExpression)
+  NLet(Array Byte, Type, NamedExpression, NamedExpression),
+  NFun(Array Byte, Array Byte, Type, NamedExpression),
+  NIf(NamedExpression, NamedExpression, NamedExpression)
 }
 
 dename(env: Array (Array Byte), named: NamedExpression): Expression =
@@ -213,6 +223,7 @@ dename(env: Array (Array Byte), named: NamedExpression): Expression =
     NBool(b) -> EBool(b),
     NOp(op) -> EOp(op),
     NApply(f, x) -> EApply(dename(env, f), dename(env, x)),
+    NIf(c, t, f) -> EIf(dename(env, c), dename(env, t), dename(env, f)),
     NLet(name, t, v, e) ->
       let new_env = Array.push(env, name) in
       let idx = Array.len(env) in
@@ -234,7 +245,8 @@ type Expression {
   EOp(Operator),
   EApply(Expression, Expression),
   ELet(Int, Type, Expression, Expression), // let x :: t = v in e
-  EFun(Int, Int, Type, Expression)         // fun f(x) :: t = e
+  EFun(Int, Int, Type, Expression),        // fun f(x) :: t = e
+  EIf(Expression, Expression, Expression)  // if c then t else f
 }
 
 var_print(idx: Int): Array Byte =
@@ -246,6 +258,12 @@ expression_print(expr: Expression): Array Byte =
     ENum(n) -> String.int_to_string(n),
     EBool(b) -> String.bool_to_string(b),
     EOp(op) -> operator_print(op),
+    EIf(c, t, f) -> "if "
+                    |> String.concat(expression_print(c))
+                    |> String.concat(" then ")
+                    |> String.concat(expression_print(t))
+                    |> String.concat(" else ")
+                    |> String.concat(expression_print(f)),
     EApply(f, x) -> expression_print(f)
                     |> String.concat("(")
                     |> String.concat(expression_print(x))
@@ -270,6 +288,7 @@ type MinHS {
   HNum(Int),
   HBool(Bool),
   HApply(MinHS, MinHS),
+  HIf(MinHS, MinHS, MinHS),     // (If c t f)
   HLet(MinHS, MinHS -> MinHS),  // (Let v x.e)
   HLam(MinHS -> MinHS),         // (Lam x.e)
   HFun(MinHS -> MinHS -> MinHS) // (Fun f.x.e)
@@ -320,6 +339,17 @@ infer_type(env: HashMap Int Type, expr: Expression): Result Type (Expression, Ty
       Some(typ) -> Ok(typ),
       None      -> panic(String.concat("unbound variable: ", String.int_to_string(id)))
     },
+    EIf(c, t, f) ->
+      let c_type_res = infer_type(env, c) in
+      let t_type_res = infer_type(env, t) in
+      let f_type_res = infer_type(env, f) in
+      match (c_type_res, t_type_res, f_type_res) {
+        (Ok(Boolean), Ok(t_type), Ok(f_type)) -> if type_eq(t_type, f_type) { Ok(t_type) } else { Err(f, t_type, f_type) },
+        (Ok(c_type), _, _) -> Err(c, Boolean, c_type),
+        (Err(_, _, _), _, _) -> c_type_res,
+        (_, Err(_, _, _), _) -> t_type_res,
+        (_, _, Err(_, _, _)) -> f_type_res,
+      },
     EApply(f, x) ->
       let f_type = infer_type(env, f) in
       let x_type_res = infer_type(env, x) in
@@ -439,6 +469,7 @@ lift_expression(expr: Expression, sub: Int -> Result MinHS Int): MinHS =
           _ -> panic(cant_apply2(op, h_x1, h_x2))
         }
     },
+    EIf(c, t, f) -> HIf(lift_expression(c, sub), lift_expression(t, sub), lift_expression(f, sub)),
     EApply(e1, e2) -> HApply(lift_expression(e1, sub), lift_expression(e2, sub)),
     ELet(x_idx, _, v, e) ->
       HLet(lift_expression(v, sub)) <| \x ->
@@ -455,6 +486,11 @@ lift_expression(expr: Expression, sub: Int -> Result MinHS Int): MinHS =
 
 eval(minhs: MinHS): MinHS =
   match minhs {
+    HIf(c, t, f) -> match eval(c) {
+      HBool(True) -> eval(t),
+      HBool(False) -> eval(f),
+      _ -> panic("unreachable code")
+    },
     HLet(x, f) -> f(x) |> eval(),
     HApply(f, x) -> match eval(f) {
       HLam(lam) -> lam(x) |> eval(),
