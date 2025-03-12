@@ -1,18 +1,39 @@
-module Core = file "lib/core/core.mor" expose {
-  module String,
-  module Func expose { id, compose },
-  module Option expose { Option { Some, None } },
-  module Result expose { Result { Ok, Err } },
-  module Array expose { reduce }
-}
-module Hashmap = file "lib/hashmap.mor"
-  with { Core }
+// module Core = file "lib/core/core.mor"
+//   expose {
+//     module String,
+//     module Func expose { id, compose },
+//     // module Option expose { Option { Some, None } },
+//     module Option,
+//     module Result expose { Result { Ok, Err } },
+//     module Array expose { reduce },
+//     module Iter
+//   }
+
+module Parsec = file "parsec.mor"
   expose {
-    HashMap, insert, get
+    module Core
+      expose {
+        module Array,
+        module Iter,
+        module Option,
+        module Either,
+        module String,
+        module Result,
+        module Func,
+      },
+    module Pos,
+    module Error,
+    module Prim,
+    module Char,
+    module Combinator,
+    module Expr,
+    module Token
   }
-module Parse = file "lib/parse.mor"
-  with { Core }
-  expose { Parse, lazy }
+
+module Hashmap = file "lib/hashmap.mor" with { Core }
+  expose {
+    HashMap
+  }
 
 // whitespace
 ascii_space: Byte = 32b
@@ -41,81 +62,23 @@ ascii_upper_a: Byte = 65b
 ascii_upper_z: Byte = 90b
 ascii_underscore: Byte = 95b
 
-space: Parse () =
-  Parse.skip_post(Parse.pure(())) <|
-  Parse.or(Parse.byte_eq(ascii_space)) <|
-  Parse.or(Parse.byte_eq(ascii_line_feed)) <|
-  Parse.or(Parse.byte_eq(ascii_carriage_return)) <|
-  Parse.byte_eq(ascii_tab)
+minhsLanguageDef(stream: Prim.Stream s Byte): Token.GenLanguageDef s u r =
+  Token.LanguageDef(
+    "", // commentStart
+    "", // commentEnd
+    "", // commentLine
+    False, // nestedComments
+    Char.letter(stream), // identStart
+    Prim.tryOr(Char.alphaNum(stream), Char.oneOf(stream, "_")), // identLetter
+    Char.oneOf(stream, "+-~&|<="), // opStart
+    Char.oneOf(stream, "+-~&|<="), // opLetter
+    [], // reservedNames
+    [], // reservedOpNames
+    True // caseSensitive
+    )
 
-spaces: Parse () =
-  Parse.skip_many0(space)
-
-spaced(p: Parse a): Parse a =
-  Parse.between(spaces, spaces, p)
-
-paren(p: Parse a): Parse a =
-  Parse.between(Parse.byte_eq(ascii_open_paren), Parse.byte_eq(ascii_close_paren), p)
-
-p_basic: Parse Type =
-  paren(lazy(p_func))
-  |> Parse.or(Parse.skip_pre(p_word("int")) <| Parse.pure(Integer))
-  |> Parse.or(Parse.skip_pre(p_word("bool")) <| Parse.pure(Boolean))
-
-p_func(): Parse Type =
-  Parse.and_then(p_basic) <| \t1 ->
-  Parse.and_then(Parse.optional(Parse.skip_pre(p_word("->"), lazy(p_func)))) <| \t2_opt ->
-  Parse.pure(match t2_opt {
-    None -> t1,
-    Some(t2) -> Func(t1, t2)
-  })
-
-p_type(): Parse Type =
-  Parse.skip_pre(p_word("::"), p_func())
-
-p_digit: Parse Int =
-  Parse.byte_range(ascii_zero, ascii_nine)
-  |> Parse.map(\x -> byte_to_int(x -& ascii_zero))
-
-p_int: Parse Int =
-  Parse.skip_pre(Parse.not_followed_by(Parse.byte_eq(ascii_zero))) <|
-  Parse.many1_fold(p_digit, 0, \(accum, d) -> accum * 10 + d)
-
-p_boolean: Parse Bool =
-  Parse.skip_pre(Parse.lit("true"), Parse.pure(True))
-  |> Parse.or(Parse.skip_pre(Parse.lit("false"), Parse.pure(False)))
-
-p_bool: Parse NamedExpression =
-  Parse.map(p_boolean, \b -> NBool(b))
-
-p_num: Parse NamedExpression =
-  Parse.map(p_int, \i -> NNum(i))
-
-p_char: Parse Byte =
-  Parse.byte_range(ascii_lower_a, ascii_lower_z)
-  |> Parse.or(Parse.byte_range(ascii_upper_a, ascii_upper_z))
-  |> Parse.or(Parse.byte_eq(ascii_underscore))
-  |> Parse.or(Parse.byte_range(ascii_zero, ascii_nine))
-
-p_name: Parse (Array Byte) =
-  spaced(Parse.many1(p_char))
-  |> Parse.guard(\name -> !String.equal(name, "in"))
-  |> Parse.guard(\name -> !String.equal(name, "then"))
-  |> Parse.guard(\name -> !String.equal(name, "else"))
-
-p_var: Parse NamedExpression =
-  Parse.map(p_name, \name -> NVar(name))
-
-p_op: Parse Operator =
-  Parse.byte_eq(ascii_star)
-  |> Parse.or(Parse.byte_eq(ascii_plus))
-  |> Parse.or(Parse.byte_eq(ascii_minus))
-  |> Parse.or(Parse.byte_eq(ascii_tilde))
-  |> Parse.or(Parse.byte_eq(ascii_and))
-  |> Parse.or(Parse.byte_eq(ascii_pipe))
-  |> Parse.or(Parse.byte_eq(ascii_lt))
-  |> Parse.or(Parse.byte_eq(ascii_eq))
-  |> Parse.map(\b -> match b {
+getOp(op: Byte): Operator =
+  match op {
     42b -> Mul,
     43b -> Add,
     45b -> Neg,
@@ -124,55 +87,298 @@ p_op: Parse Operator =
     124b -> Or,
     60b -> Lt,
     61b -> Eq,
-    _ -> panic("unreachable code")
-  })
+    _ -> panic("unreachable")
+  }
 
-p_operator: Parse NamedExpression =
-  Parse.map(p_op, \op -> NOp(op))
+// space: Parse () =
+//   Parse.skip_post(Parse.pure(())) <|
+//   Parse.or(Parse.byte_eq(ascii_space)) <|
+//   Parse.or(Parse.byte_eq(ascii_line_feed)) <|
+//   Parse.or(Parse.byte_eq(ascii_carriage_return)) <|
+//   Parse.byte_eq(ascii_tab)
+space(stream: Prim.Stream s Byte): Prim.ParsecT s u () r =
+  Prim.parserBind(
+    Prim.tryOr(Char.space(stream),
+    Prim.tryOr(Char.newline(stream),
+    Prim.tryOr(Char.crlf(stream),
+    Char.tab(stream)))),
+  \_ -> Prim.parserReturn(()))
 
-p_atom(): Parse NamedExpression =
-  paren(lazy(p_apply))
-  |> Parse.or(p_operator)
-  |> Parse.or(p_num)
-  |> Parse.or(p_bool)
-  |> Parse.or(p_var)
-  |> spaced()
+// spaces: Parse () =
+//   Parse.skip_many0(space)
+spaces(stream: Prim.Stream s Byte): Prim.ParsecT s u () r =
+  Prim.skipMany(space(stream))
 
-p_word(word: Array Byte): Parse () =
-  spaced(Parse.lit(word)) |> Parse.map(\_ -> ())
+// spaced(p: Parse a): Parse a =
+//   Parse.between(spaces, spaces, p)
+spaced(stream: Prim.Stream s Byte, p: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
+  Combinator.between(stream, spaces(stream), spaces(stream), p)
 
-// fun f(x) :: typ = e
-p_fun(): Parse NamedExpression =
-  Parse.and_then(Parse.skip_pre(p_word("fun"), p_name)) <| \f ->
-  Parse.and_then(paren(p_name)) <| \p ->
-  Parse.and_then(p_type()) <| \typ ->
-  Parse.and_then(Parse.skip_pre(p_word("="), lazy(p_apply))) <| \e_body ->
-  Parse.pure(NFun(f, p, typ, e_body),)
+// paren(p: Parse a): Parse a =
+//   Parse.between(Parse.byte_eq(ascii_open_paren), Parse.byte_eq(ascii_close_paren), p)
+paren(stream: Prim.Stream s Byte, p: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
+  Combinator.between(stream, Char.char(stream, 40b), Char.char(stream, 41b), p)
 
-// let x :: typ = e1 in e2
-p_let(): Parse NamedExpression =
-  Parse.and_then(Parse.skip_pre(p_word("let"), p_name)) <| \x ->
-  Parse.and_then(p_type()) <| \typ ->
-  Parse.and_then(Parse.skip_pre(p_word("="), lazy(p_apply))) <| \e_val ->
-  Parse.and_then(Parse.skip_pre(p_word("in"), lazy(p_apply))) <| \e_body ->
-  Parse.pure(NLet(x, typ, e_val, e_body))
+// p_basic: Parse Type =
+//   paren(lazy(p_func))
+//   |> Parse.or(Parse.skip_pre(p_word("int")) <| Parse.pure(Integer))
+//   |> Parse.or(Parse.skip_pre(p_word("bool")) <| Parse.pure(Boolean))
+p_basic(stream: Prim.Stream s Byte): Prim.ParsecT s u Type r =
+  Prim.tryOr(paren(stream, p_func(stream)),
+  Prim.tryOr(Prim.parserBind(p_word(stream, "int"), \_ -> Prim.parserReturn(Integer)),
+  Prim.parserBind(p_word(stream, "bool"), \_ -> Prim.parserReturn(Boolean))))
 
-// if c then e1 else e2
-p_if(): Parse NamedExpression =
-  Parse.and_then(Parse.skip_pre(p_word("if"), lazy(p_apply))) <| \e_cond ->
-  Parse.and_then(Parse.skip_pre(p_word("then"), lazy(p_apply))) <| \e_true ->
-  Parse.and_then(Parse.skip_pre(p_word("else"), lazy(p_apply))) <| \e_false ->
-  Parse.pure(NIf(e_cond, e_true, e_false))
+// p_func(): Parse Type =
+//   Parse.and_then(p_basic) <| \t1 ->
+//   Parse.and_then(Parse.optional(Parse.skip_pre(p_word("->"), lazy(p_func)))) <| \t2_opt ->
+//   Parse.pure(match t2_opt {
+//     None -> t1,
+//     Some(t2) -> Func(t1, t2)
+//   })
+p_func(stream: Prim.Stream s Byte): Prim.ParsecT s u Type r =
+  Prim.parserBind(p_basic(stream), \t1 ->
+  Prim.parserBind(Combinator.optionMaybe(stream, Prim.parserBind(p_word(stream, "->"), \_ ->
+  p_func(stream))), \t2_opt ->
+  Prim.parserReturn(match t2_opt {
+    Option.None -> t1,
+    Option.Some(t2) -> Func(t1, t2)
+  })))
 
-p_expr(): Parse NamedExpression =
-  p_let() |> Parse.or(lazy(p_fun)) |> Parse.or(lazy(p_if)) |> Parse.or(lazy(p_atom))
+// p_type(): Parse Type =
+//   Parse.skip_pre(p_word("::"), p_func())
+p_type(stream: Prim.Stream s Byte): Prim.ParsecT s u Type r =
+  Prim.parserBind(p_word(stream, "::"), \_ -> p_func(stream))
 
-p_apply(): Parse NamedExpression =
-  Parse.many1(p_expr())
-  |> Parse.map(\exprs -> reduce(exprs, NApply))
+// p_digit: Parse Int =
+//   Parse.byte_range(ascii_zero, ascii_nine)
+//   |> Parse.map(\x -> byte_to_int(x -& ascii_zero))
+p_digit(stream: Prim.Stream s Byte): Prim.ParsecT s u Int r =
+  Prim.parsecMap(byte_to_int, Char.digit(stream))
 
-parse_expression(str: Array Byte): Option NamedExpression =
-  Parse.parse_all(str, p_apply())
+// p_int: Parse Int =
+//   Parse.skip_pre(Parse.not_followed_by(Parse.byte_eq(ascii_zero))) <|
+//   Parse.many1_fold(p_digit, 0, \(accum, d) -> accum * 10 + d)
+p_int(stream: Prim.Stream s Byte): Prim.ParsecT s u Int r =
+  Prim.parsecMap(\cs -> Array.foldl(cs, 0, \(acc, d) -> (10 * acc) + d), Prim.many1(p_digit(stream)))
+
+
+// p_boolean: Parse Bool =
+//   Parse.skip_pre(Parse.lit("true"), Parse.pure(True))
+//   |> Parse.or(Parse.skip_pre(Parse.lit("false"), Parse.pure(False)))
+p_boolean(stream: Prim.Stream s Byte): Prim.ParsecT s u Bool r =
+  Prim.parsecMap(\str -> strToBool(Iter.items(str)),
+  Prim.tryOr(Char.string1(stream, "true"),
+  Prim.tryOr(Char.string1(stream, "True"),
+  Prim.tryOr(Char.string1(stream, "false"),
+  Char.string1(stream, "False")))))
+
+strToBool(str: Iter.Iter Byte): Bool =
+  match Iter.next(str) {
+    Option.Some(116b, str1) -> trueToBool(str1),
+    Option.Some(84b, str1) -> trueToBool(str1),
+    Option.Some(102b, str1) -> falseToBool(str1),
+    Option.Some(70b, str1) -> falseToBool(str1),
+    _ -> panic("unreachable")
+  }
+
+trueToBool(str: Iter.Iter Byte): Bool =
+  match Iter.next(str) {
+    Option.Some(114b, str1) ->
+      match Iter.next(str1) {
+        Option.Some(117b, str2) ->
+          match Iter.next(str2) {
+            Option.Some(101b,_) -> True,
+            _ -> panic("unreachable")
+          },
+        _ -> panic("unreachable")
+      },
+    _ -> panic("unreachable")
+  }
+
+falseToBool(str: Iter.Iter Byte): Bool =
+  match Iter.next(str) {
+    Option.Some(97b, str1) ->
+      match Iter.next(str1) {
+        Option.Some(108b, str2) ->
+          match Iter.next(str2) {
+            Option.Some(115b, str3) ->
+              match Iter.next(str3) {
+                Option.Some(101b,_) -> False,
+                _ -> panic("unreachable")
+              },
+            _ -> panic("unreachable")
+          },
+        _ -> panic("unreachable")
+      },
+    _ -> panic("unreachable")
+  }
+
+// p_bool: Parse NamedExpression =
+//   Parse.map(p_boolean, \b -> NBool(b))
+p_bool(stream: Prim.Stream s Byte): Prim.ParsecT s u NamedExpression r =
+  Prim.parsecMap(NBool, p_boolean(stream))
+
+// p_num: Parse NamedExpression =
+//   Parse.map(p_int, \i -> NNum(i))
+p_num(stream: Prim.Stream s Byte): Prim.ParsecT s u NamedExpression r =
+  Prim.parsecMap(NNum, p_int(stream))
+
+// p_char: Parse Byte =
+//   Parse.byte_range(ascii_lower_a, ascii_lower_z)
+//   |> Parse.or(Parse.byte_range(ascii_upper_a, ascii_upper_z))
+//   |> Parse.or(Parse.byte_eq(ascii_underscore))
+//   |> Parse.or(Parse.byte_range(ascii_zero, ascii_nine))
+p_char(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
+  Prim.tryOr(Char.alphaNum(stream), Char.char(stream, 95b))
+
+// p_name: Parse (Array Byte) =
+//   spaced(Parse.many1(p_char))
+//   |> Parse.guard(\name -> !String.equal(name, "in"))
+//   |> Parse.guard(\name -> !String.equal(name, "then"))
+//   |> Parse.guard(\name -> !String.equal(name, "else"))
+p_name(stream: Prim.Stream s Byte): Prim.ParsecT s u (Array Byte) r =
+  let eqChar = \(c1, c2) -> c1 =& c2 in
+  Prim.parserBind(spaced(stream, Prim.many1(p_char(stream))), \name ->
+    if Array.equal(name, "in", eqChar) {
+      Prim.parserFail("Reserved keyword: \"in\"")
+    } else if Array.equal(name, "then", eqChar) {
+      Prim.parserFail("Reserved keyword: \"then\"")
+    } else if Array.equal(name, "else", eqChar) {
+      Prim.parserFail("Reserved keyword: \"else\"")
+    } else {
+      Prim.parserReturn(name)
+    })
+
+// p_var: Parse NamedExpression =
+//   Parse.map(p_name, \name -> NVar(name))
+p_var(stream: Prim.Stream s Byte): Prim.ParsecT s u NamedExpression r =
+  Prim.parsecMap(NVar, p_name(stream))
+
+// p_op: Parse Operator =
+//   Parse.byte_eq(ascii_star)
+//   |> Parse.or(Parse.byte_eq(ascii_plus))
+//   |> Parse.or(Parse.byte_eq(ascii_minus))
+//   |> Parse.or(Parse.byte_eq(ascii_tilde))
+//   |> Parse.or(Parse.byte_eq(ascii_and))
+//   |> Parse.or(Parse.byte_eq(ascii_pipe))
+//   |> Parse.or(Parse.byte_eq(ascii_lt))
+//   |> Parse.or(Parse.byte_eq(ascii_eq))
+//   |> Parse.map(\b -> match b {
+//     42b -> Mul,
+//     43b -> Add,
+//     45b -> Neg,
+//     126b -> Not,
+//     38b -> And,
+//     124b -> Or,
+//     60b -> Lt,
+//     61b -> Eq,
+//     _ -> panic("unreachable code")
+//   })
+p_op(stream: Prim.Stream s Byte): Prim.ParsecT s u Operator r =
+  Prim.parsecMap(\b -> match b {
+    42b -> Mul,
+    43b -> Add,
+    45b -> Neg,
+    126b -> Not,
+    38b -> And,
+    124b -> Or,
+    60b -> Lt,
+    61b -> Eq,
+    _ -> panic("unreachable")
+  }, Char.oneOf(stream, "*+-~&|<="))
+
+// p_operator: Parse NamedExpression =
+//   Parse.map(p_op, \op -> NOp(op))
+p_operator(stream: Prim.Stream s Byte): Prim.ParsecT s u NamedExpression r =
+  Prim.parsecMap(NOp, p_op(stream))
+
+// p_atom(): Parse NamedExpression =
+//   paren(lazy(p_apply))
+//   |> Parse.or(p_operator)
+//   |> Parse.or(p_num)
+//   |> Parse.or(p_bool)
+//   |> Parse.or(p_var)
+//   |> spaced()
+p_atom(stream: Prim.Stream s Byte): Prim.ParsecT s u NamedExpression r =
+  spaced(stream,
+    Prim.tryOr(paren(stream, p_apply(stream)),
+    Prim.tryOr(p_operator(stream),
+    Prim.tryOr(p_num(stream),
+    Prim.tryOr(p_bool(stream),
+    p_var(stream)
+  )))))
+
+// p_word(word: Array Byte): Parse () =
+//   spaced(Parse.lit(word)) |> Parse.map(\_ -> ())
+p_word(stream: Prim.Stream s Byte, word: Array Byte): Prim.ParsecT s u () r =
+  spaced(stream, Prim.parsecMap(\_ -> (), Char.string1(stream, word)))
+
+// // fun f(x) :: typ = e
+// p_fun(): Parse NamedExpression =
+//   Parse.and_then(Parse.skip_pre(p_word("fun"), p_name)) <| \f ->
+//   Parse.and_then(paren(p_name)) <| \p ->
+//   Parse.and_then(p_type()) <| \typ ->
+//   Parse.and_then(Parse.skip_pre(p_word("="), lazy(p_apply))) <| \e_body ->
+//   Parse.pure(NFun(f, p, typ, e_body),)
+p_fun(stream: Prim.Stream s Byte): Prim.ParsecT s u NamedExpression r =
+  Prim.parserBind(p_word(stream, "fun"), \_ ->
+  Prim.parserBind(p_name(stream), \f ->
+  Prim.parserBind(paren(stream, p_name(stream)), \p ->
+  Prim.parserBind(p_type(stream), \typ ->
+  Prim.parserBind(p_word(stream, "="), \_ ->
+  Prim.parserBind(p_apply(stream), \e_body ->
+  Prim.parserReturn(NFun(f, p, typ, e_body))))))))
+
+// // let x :: typ = e1 in e2
+// p_let(): Parse NamedExpression =
+//   Parse.and_then(Parse.skip_pre(p_word("let"), p_name)) <| \x ->
+//   Parse.and_then(p_type()) <| \typ ->
+//   Parse.and_then(Parse.skip_pre(p_word("="), lazy(p_apply))) <| \e_val ->
+//   Parse.and_then(Parse.skip_pre(p_word("in"), lazy(p_apply))) <| \e_body ->
+//   Parse.pure(NLet(x, typ, e_val, e_body))
+p_let(stream: Prim.Stream s Byte): Prim.ParsecT s u NamedExpression r =
+  Prim.parserBind(Char.string1(stream, "let"), \_ ->
+  Prim.parserBind(p_name(stream), \name ->
+  Prim.parserBind(p_type(stream), \typ ->
+  Prim.parserBind(p_word(stream, "="), \_ ->
+  Prim.parserBind(p_apply(stream), \e_val ->
+  Prim.parserBind(p_word(stream, "in"), \_ ->
+  Prim.parserBind(p_apply(stream), \e_body ->
+  Prim.parserReturn(NLet(name, typ, e_val, e_body)))))))))
+
+// // if c then e1 else e2
+// p_if(): Parse NamedExpression =
+//   Parse.and_then(Parse.skip_pre(p_word("if"), lazy(p_apply))) <| \e_cond ->
+//   Parse.and_then(Parse.skip_pre(p_word("then"), lazy(p_apply))) <| \e_true ->
+//   Parse.and_then(Parse.skip_pre(p_word("else"), lazy(p_apply))) <| \e_false ->
+//   Parse.pure(NIf(e_cond, e_true, e_false))
+p_if(stream: Prim.Stream s Byte): Prim.ParsecT s u NamedExpression r =
+  Prim.parserBind(p_word(stream, "if"), \_ ->
+  Prim.parserBind(p_apply(stream), \e_cond ->
+  Prim.parserBind(p_word(stream, "then"), \_ ->
+  Prim.parserBind(p_apply(stream), \e_true ->
+  Prim.parserBind(p_word(stream, "else"), \_ ->
+  Prim.parserBind(p_apply(stream), \e_false ->
+  Prim.parserReturn(NIf(e_cond, e_true, e_false))))))))
+
+// p_expr(): Parse NamedExpression =
+//   p_let() |> Parse.or(lazy(p_fun)) |> Parse.or(lazy(p_if)) |> Parse.or(lazy(p_atom))
+p_expr(stream: Prim.Stream s Byte): Prim.ParsecT s u NamedExpression r =
+  Prim.tryOr(p_let(stream),
+  Prim.tryOr(p_fun(stream),
+  Prim.tryOr(p_if(stream),
+  p_atom(stream))))
+
+// p_apply(): Parse NamedExpression =
+//   Parse.many1(p_expr())
+//   |> Parse.map(\exprs -> reduce(exprs, NApply))
+p_apply(stream: Prim.Stream s Byte): Prim.ParsecT s u NamedExpression r =
+  Prim.parsecMap(\es -> Array.reduce(es, NApply), Prim.many1(p_expr(stream)))
+
+// parse_expression(str: Array Byte): Option NamedExpression =
+//   Parse.parse_all(str, p_apply())
+parse_expression(stream: Prim.Stream s Byte, inp: s): Either.Either Error.ParseError NamedExpression =
+  Prim.parse(p_apply(stream), "TEST", inp)
 
 type Type {
   Dummy,
@@ -216,8 +422,8 @@ type NamedExpression {
 dename(env: Array (Array Byte), named: NamedExpression): Expression =
   match named {
     NVar(name) -> match Array.find_index(env, \var -> String.equal(name, var)) {
-      None -> panic("variable not in scope: " |> String.concat(name)),
-      Some(idx) -> EVar(idx)
+      Option.None -> panic("variable not in scope: " |> String.concat(name)),
+      Option.Some(idx) -> EVar(idx)
     },
     NNum(i) -> ENum(i),
     NBool(b) -> EBool(b),
@@ -237,7 +443,7 @@ dename(env: Array (Array Byte), named: NamedExpression): Expression =
 dename_expression(named: NamedExpression): Expression =
   dename([], named)
 
-// type definition for first-order syntax
+// // type definition for first-order syntax
 type Expression {
   EVar(Int), // variables are identified by number
   ENum(Int),
@@ -282,7 +488,7 @@ expression_print(expr: Expression): Array Byte =
                           |> String.concat(expression_print(e))
   }
 
-// type definition for higher-order syntax
+// // type definition for higher-order syntax
 
 type MinHS {
   HNum(Int),
@@ -330,62 +536,62 @@ operator_print(op: Operator): Array Byte =
 
 
 
-infer_type(env: HashMap Int Type, expr: Expression): Result Type (Expression, Type, Type) =
+infer_type(env: HashMap Int Type, expr: Expression): Result.Result Type (Expression, Type, Type) =
   match expr {
-    ENum(_)  -> Ok(Integer),
-    EBool(_) -> Ok(Boolean),
-    EOp(op)  -> Ok(get_operator_type(op)),
-    EVar(id) -> match get(env, id) {
-      Some(typ) -> Ok(typ),
-      None      -> panic(String.concat("unbound variable: ", String.int_to_string(id)))
+    ENum(_)  -> Result.Ok(Integer),
+    EBool(_) -> Result.Ok(Boolean),
+    EOp(op)  -> Result.Ok(get_operator_type(op)),
+    EVar(id) -> match Hashmap.get(env, id) {
+      Option.Some(typ) -> Result.Ok(typ),
+      Option.None      -> panic(String.concat("unbound variable: ", String.int_to_string(id)))
     },
     EIf(c, t, f) ->
       let c_type_res = infer_type(env, c) in
       let t_type_res = infer_type(env, t) in
       let f_type_res = infer_type(env, f) in
       match (c_type_res, t_type_res, f_type_res) {
-        (Ok(Boolean), Ok(t_type), Ok(f_type)) -> if type_eq(t_type, f_type) { Ok(t_type) } else { Err(f, t_type, f_type) },
-        (Ok(c_type), _, _) -> Err(c, Boolean, c_type),
-        (Err(_, _, _), _, _) -> c_type_res,
-        (_, Err(_, _, _), _) -> t_type_res,
-        (_, _, Err(_, _, _)) -> f_type_res,
+        (Result.Ok(Boolean), Result.Ok(t_type), Result.Ok(f_type)) -> if type_eq(t_type, f_type) { Result.Ok(t_type) } else { Result.Err(f, t_type, f_type) },
+        (Result.Ok(c_type), _, _) -> Result.Err(c, Boolean, c_type),
+        (Result.Err(_, _, _), _, _) -> c_type_res,
+        (_, Result.Err(_, _, _), _) -> t_type_res,
+        (_, _, Result.Err(_, _, _)) -> f_type_res,
       },
     EApply(f, x) ->
       let f_type = infer_type(env, f) in
       let x_type_res = infer_type(env, x) in
       match x_type_res {
-        Ok(x_type) ->
+        Result.Ok(x_type) ->
           match f_type {
-            Ok(Func(p, r)) -> if type_eq(p, x_type) { Ok(r) } else { Err(x, r, x_type) },
-            Ok(t)          -> Err(expr, Func(Dummy, Dummy), t),
-            Err(_, _, _)   -> f_type,
+            Result.Ok(Func(p, r)) -> if type_eq(p, x_type) { Result.Ok(r) } else { Result.Err(x, r, x_type) },
+            Result.Ok(t)          -> Result.Err(expr, Func(Dummy, Dummy), t),
+            Result.Err(_, _, _)   -> f_type,
           },
-        Err(_, _, _) -> x_type_res
+        Result.Err(_, _, _) -> x_type_res
       },
     ELet(id, typ, val, body) ->
       match infer_type(env, val) {
-        Err(v, t1, t2) -> Err(v, t1, t2),
-        Ok(val_type) -> 
+        Result.Err(v, t1, t2) -> Result.Err(v, t1, t2),
+        Result.Ok(val_type) -> 
           if type_eq(val_type, typ) {
-            infer_type(insert(env, id, typ), body)
+            infer_type(Hashmap.insert(env, id, typ), body)
           } else {
-            Err(val, typ, val_type)
+            Result.Err(val, typ, val_type)
           }
       },
     EFun(fun_id, par_id, typ, body) ->
       match typ {
         Func(p, r) ->
-          let new_env = env |> insert(fun_id, typ) |> insert(par_id, p) in
+          let new_env = env |> Hashmap.insert(fun_id, typ) |> Hashmap.insert(par_id, p) in
           match infer_type(new_env, body) {
-            Err(v, t1, t2) -> Err(v, t1, t2),
-            Ok(body_type) ->
+            Result.Err(v, t1, t2) -> Result.Err(v, t1, t2),
+            Result.Ok(body_type) ->
               if type_eq(body_type, r) {
-                Ok(typ)
+                Result.Ok(typ)
               } else {
-                Err(body, r, body_type)
+                Result.Err(body, r, body_type)
               }
           },
-        _ -> Err(expr, Func(Dummy, Dummy), typ)
+        _ -> Result.Err(expr, Func(Dummy, Dummy), typ)
       }
   }
 
@@ -401,10 +607,10 @@ get_operator_type(operator: Operator): Type =
     Lt  -> Func(Integer, Func(Integer, Boolean))
   }
 
-substitution(var_idx: Int, minHs: MinHS): Int -> Result MinHS Int =
-  \i -> if var_idx = i { Ok(minHs) } else { Err(i) }
+substitution(var_idx: Int, minHs: MinHS): Int -> Result.Result MinHS Int =
+  \i -> if var_idx = i { Result.Ok(minHs) } else { Result.Err(i) }
 
-compose_sub(s1: Int -> Result MinHS Int, s2: Int -> Result MinHS Int): Int -> Result MinHS Int =
+compose_sub(s1: Int -> Result.Result MinHS Int, s2: Int -> Result.Result MinHS Int): Int -> Result.Result MinHS Int =
   \i -> Result.either(s1(i), s2(i))
 
 cant_apply1(op: Operator, minhs: MinHS): Array Byte =
@@ -418,7 +624,7 @@ cant_apply2(op: Operator, minhs1: MinHS, minhs2: MinHS): Array Byte =
   |> String.concat(" and ")
   |> String.concat(minhs_print(minhs2))
 
-lift_expression(expr: Expression, sub: Int -> Result MinHS Int): MinHS =
+lift_expression(expr: Expression, sub: Int -> Result.Result MinHS Int): MinHS =
   match expr {
     EVar(i) -> Result.unwrap(sub(i)),
     ENum(i) -> HNum(i),
@@ -503,25 +709,29 @@ eval(minhs: MinHS): MinHS =
     _ -> minhs
   }
 
-run_program(source: Array Byte): Result MinHS (Array Byte) =
-  let expr_opt = parse_expression(source) in
+basicStream: Prim.Stream (Iter.Iter Byte) Byte =
+  Prim.Stream(\s -> Iter.next(s))
+
+run_program(source: Array Byte): Result.Result MinHS (Array Byte) =
+  let expr_opt = parse_expression(basicStream, Iter.items(source)) in
     match expr_opt {
-      None -> Err("Parse error"),
-      Some(named_expr) ->
+      Either.Left(err) -> Result.Err(Error.messageString(Array.get(Error.errorMessages(err), 0))),
+      Either.Right(named_expr) ->
         let expr = dename_expression(named_expr) in
-        let env = Hashmap.empty(id, \(i1, i2) -> i1 = i2) in
+        let env = Hashmap.empty(Func.id, \(i1, i2) -> i1 = i2) in
         match infer_type(env, expr) {
-          Ok(typ) -> Ok(lift_expression(expr, \i -> Err(i)) |> eval()),
-          Err(e, t1, t2) ->
+          Result.Ok(typ) -> Result.Ok(lift_expression(expr, \i -> Result.Err(i)) |> eval()),
+          Result.Err(e, t1, t2) ->
             let message = "Type error:"
                         |> String.concat(expression_print(e))
                         |> String.concat(" has type ")
                         |> String.concat(type_print(t2))
                         |> String.concat(" but expected type ")
                         |> String.concat(type_print(t1)) in
-            Err(message)
+            Result.Err(message)
         }
     }
+
 
 proc main (): () =
   // let str = do input() in
@@ -536,6 +746,6 @@ proc main (): () =
   let num = do input() in // 15000
   let str = "(fun f(x) :: (int -> int) = if = x " |> String.concat(num) |> String.concat(" then x else f (+ x 1)) 10") in
   match run_program(str) {
-    Ok(res) -> do output(minhs_print(res)),
-    Err(message) -> do output(message)
+    Result.Ok(res) -> do output(minhs_print(res)),
+    Result.Err(message) -> do output(message)
   }
