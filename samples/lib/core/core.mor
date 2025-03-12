@@ -2,11 +2,13 @@ pub module Option = file "option.mor"
 
 pub module Iter = file "iter.mor" with { Option }
 
-pub module Array = file "array.mor" with { Iter, Option }
+pub module Ord = file "ord.mor" with { Iter, Option }
+
+pub module Array = file "array.mor" with { Iter, Option, Ord }
 
 pub module Result = file "result.mor" with { Array, Option }
 
-pub module String = file "string.mor" with { Array, Option, Iter }
+pub module String = file "string.mor" with { Array, Option, Iter, Ord }
 
 pub module Func = file "func.mor"
 
@@ -19,3 +21,7 @@ pub module Control = file "control.mor"
 pub module Rand = file "rand.mor" with { Array, Math }
 
 pub module State = file "state.mor" with { Iter }
+
+pub module Either = file "either.mor" with {Option, Array, Iter}
+
+pub module Identity = file "identity.mor"

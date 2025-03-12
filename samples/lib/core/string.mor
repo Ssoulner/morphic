@@ -1,6 +1,34 @@
 import Array
 import Option expose { Option { Some, None } }
 import Iter expose { Iter }
+import Ord
+
+pub type Show a {
+  Show(a -> Array Byte)
+}
+
+pub show(shw: Show a, a: a): Array Byte =
+  let Show(f) = shw in
+  f(a)
+
+pub showChar: Show Byte =
+  Show(\c -> [c])
+
+pub ordString: Ord.Ord (Array Byte) =
+  Ord.Ord(\(x1, x2) -> compareStrings(Iter.items(x1), Iter.items(x2)))
+
+compareStrings(xs1: Iter.Iter Byte, xs2: Iter.Iter Byte): Ord.Ordering =
+  match (Iter.next(xs1), Iter.next(xs2)) {
+    (Option.None, Option.None) -> Ord.EQ,
+    (Option.None, _) -> Ord.LT,
+    (_,Option.None) -> Ord.GT,
+    (Option.Some(x1, xs11), Option.Some(x2, xs21)) ->
+      match Ord.compare(Ord.ordByte, x1, x2) {
+        Ord.GT -> Ord.GT,
+        Ord.LT -> Ord.LT,
+        Ord.EQ -> compareStrings(xs11, xs21)
+      }
+  }
 
 pub bool_to_string(b: Bool): Array Byte =
   if b {
@@ -96,4 +124,197 @@ pub concat(x : Array Byte, y : Array Byte): Array Byte = Array.concat(x, y)
 
 pub join(xs: Array (Array Byte), sep: Array Byte): Array Byte =
   (Iter.join(Iter.items(xs) |> Iter.map(Iter.items), Iter.items(sep)) |> Array.from_iter())
-  
+
+pub isSpace(b: Byte): Bool =
+  match b {
+    10b -> True,
+    _ -> False
+  }
+
+pub isUpper(b: Byte): Bool =
+  match b {
+    65b -> True,
+    66b -> True,
+    67b -> True,
+    68b -> True,
+    69b -> True,
+    70b -> True,
+    71b -> True,
+    72b -> True,
+    73b -> True,
+    74b -> True,
+    75b -> True,
+    76b -> True,
+    77b -> True,
+    78b -> True,
+    79b -> True,
+    80b -> True,
+    81b -> True,
+    82b -> True,
+    83b -> True,
+    84b -> True,
+    85b -> True,
+    86b -> True,
+    87b -> True,
+    88b -> True,
+    89b -> True,
+    90b -> True,
+    _ -> False
+  }
+
+pub isLower(b: Byte): Bool =
+  match b {
+    97b -> True,
+    98b -> True,
+    99b -> True,
+    100b -> True,
+    101b -> True,
+    102b -> True,
+    103b -> True,
+    104b -> True,
+    105b -> True,
+    106b -> True,
+    107b -> True,
+    108b -> True,
+    109b -> True,
+    110b -> True,
+    111b -> True,
+    112b -> True,
+    113b -> True,
+    114b -> True,
+    115b -> True,
+    116b -> True,
+    117b -> True,
+    118b -> True,
+    119b -> True,
+    120b -> True,
+    121b -> True,
+    122b -> True,
+    _ -> False
+  }
+
+pub isDigit(b: Byte): Bool =
+  match b {
+    48b -> True,
+    49b -> True,
+    50b -> True,
+    51b -> True,
+    52b -> True,
+    53b -> True,
+    54b -> True,
+    55b -> True,
+    56b -> True,
+    57b -> True,
+    _ -> False
+  }
+
+pub isAlpha(b: Byte): Bool =
+  isLower(b) || isUpper(b)
+
+pub isAlphaNum(b: Byte): Bool =
+  if isDigit(b) {
+    True
+  } else if isLower(b) {
+    True
+  } else if isUpper(b) {
+    True
+  } else {
+    False
+  }
+
+pub isHexDigit(b: Byte): Bool =
+  if isDigit(b) {
+    True
+  } else {
+    match b {
+      65b -> True,
+      66b -> True,
+      67b -> True,
+      68b -> True,
+      69b -> True,
+      70b -> True,
+      97b -> True,
+      98b -> True,
+      99b -> True,
+      100b -> True,
+      101b -> True,
+      102b -> True,
+      _ -> False
+    }
+  }
+
+pub isOctDigit(b: Byte): Bool =
+  match b {
+    48b -> True,
+    49b -> True,
+    50b -> True,
+    51b -> True,
+    52b -> True,
+    53b -> True,
+    54b -> True,
+    55b -> True,
+    _ -> False
+  }
+
+pub toLower(b: Byte): Byte =
+  match b {
+    65b -> 97b,
+    66b -> 98b,
+    67b -> 99b,
+    68b -> 100b,
+    69b -> 101b,
+    70b -> 102b,
+    71b -> 103b,
+    72b -> 104b,
+    73b -> 105b,
+    74b -> 106b,
+    75b -> 107b,
+    76b -> 108b,
+    77b -> 109b,
+    78b -> 110b,
+    79b -> 111b,
+    80b -> 112b,
+    81b -> 113b,
+    82b -> 114b,
+    83b -> 115b,
+    84b -> 116b,
+    85b -> 117b,
+    86b -> 118b,
+    87b -> 119b,
+    88b -> 120b,
+    89b -> 121b,
+    90b -> 122b,
+    _ -> b
+  }
+
+
+pub toUpper(b: Byte): Byte =
+  match b {
+    97b -> 65b,
+    98b -> 66b,
+    99b -> 67b,
+    100b -> 68b,
+    101b -> 69b,
+    102b -> 70b,
+    103b -> 71b,
+    104b -> 72b,
+    105b -> 73b,
+    106b -> 74b,
+    107b -> 75b,
+    108b -> 76b,
+    109b -> 77b,
+    110b -> 78b,
+    111b -> 79b,
+    112b -> 80b,
+    113b -> 81b,
+    114b -> 82b,
+    115b -> 83b,
+    116b -> 84b,
+    117b -> 85b,
+    118b -> 86b,
+    119b -> 87b,
+    120b -> 88b,
+    121b -> 89b,
+    122b -> 90b,
+    _ -> b
+  }
