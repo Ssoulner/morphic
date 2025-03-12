@@ -7,7 +7,6 @@ import Core
     module Either,
     module Func,
     module String,
-    module Identity,
     module Ord
   }
 

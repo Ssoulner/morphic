@@ -45,7 +45,7 @@ pub option(stream: Prim.Stream s t, x: a, p: Prim.ParsecT s u a r): Prim.ParsecT
 // optionMaybe :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m (Maybe a)
 // {-# INLINABLE optionMaybe #-}
 // optionMaybe p       = option Nothing (liftM Just p)
-optionMaybe(stream: Prim.Stream s t, p: Prim.ParsecT s u a r): Prim.ParsecT s u (Option.Option a) r =
+pub optionMaybe(stream: Prim.Stream s t, p: Prim.ParsecT s u a r): Prim.ParsecT s u (Option.Option a) r =
   option(stream, Option.None, Prim.parsecMap(Option.Some, p))
 
 // -- | @optional p@ tries to apply parser @p@.  It will parse @p@ or nothing.
@@ -55,7 +55,7 @@ optionMaybe(stream: Prim.Stream s t, p: Prim.ParsecT s u a r): Prim.ParsecT s u 
 // optional :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m ()
 // {-# INLINABLE optional #-}
 // optional p          = do{ _ <- p; return ()} <|> return ()
-optional(stream: Prim.Stream s t, p: Prim.ParsecT s u a r): Prim.ParsecT s u () r =
+pub optional(stream: Prim.Stream s t, p: Prim.ParsecT s u a r): Prim.ParsecT s u () r =
   panic("unimplemented")
 
 // -- | @between open close p@ parses @open@, followed by @p@ and @close@.

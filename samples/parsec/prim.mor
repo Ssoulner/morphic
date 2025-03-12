@@ -55,7 +55,13 @@ pub unexpected(msg: Array Byte): ParsecT s u a r =
 //              }
 //      deriving ( Typeable )
 pub type ParsecT s u a r {
-  ParsecT((State s u, (a, State s u, Error.ParseError) -> r, Error.ParseError -> r, (a, State s u, Error.ParseError) -> r, Error.ParseError -> r) -> r)
+  ParsecT(
+    (State s u,
+    (a, State s u, Error.ParseError) -> r,
+    Error.ParseError -> r,
+    (a, State s u, Error.ParseError) -> r,
+    Error.ParseError -> r)
+      -> r)
 }
 
 unParser(p: ParsecT s u a r, state: State s u, consOk: (a, State s u, Error.ParseError) -> r, consErr: Error.ParseError -> r, emptyOk: (a, State s u, Error.ParseError) -> r, emptyErr: Error.ParseError -> r): r =
@@ -583,7 +589,7 @@ walk(stream: Stream s t, eqT: (t, t) -> Bool, ts1: Iter.Iter t, rs: s, u: u, tts
   }
 
 pub type Stream s t {
-  Stream(s -> Option.Option (t, s))
+  pub Stream(s -> Option.Option (t, s))
 }
 
 // uncons(s: Array s): Option.Option (s, Array s) =
@@ -979,7 +985,7 @@ runParser(p: ParsecT s u a (Consumed (Reply s u a)), u: u, name: Array Byte, s: 
 // parse :: (Stream s Identity t)
 //       => Parsec s () a -> SourceName -> s -> Either ParseError a
 // parse p = runP p ()
-parse(p: ParsecT s () a (Consumed (Reply s () a)), name: Array Byte, s: s): Either.Either Error.ParseError a =
+pub parse(p: ParsecT s () a (Consumed (Reply s () a)), name: Array Byte, s: s): Either.Either Error.ParseError a =
   runP(p, (), name, s)
 
 // -- | The expression @parseTest p input@ applies a parser @p@ against

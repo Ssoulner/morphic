@@ -7,7 +7,6 @@ import Core
     module Either,
     module Func,
     module String,
-    module Identity,
     module Ord
   }
 
@@ -20,9 +19,9 @@ import Combinator
 
 
 // type LanguageDef st = GenLanguageDef String st Identity
-type LanguageDef st {
-  GenLanguageDef(Array Byte, st)
-}
+// type LanguageDef st {
+//   GenLanguageDef(Array Byte, st)
+// }
 
 // -- | The @GenLanguageDef@ type is a record that contains all parameterizable
 // -- features of the "Text.Parsec.Token" module. The module "Text.Parsec.Language"
@@ -110,8 +109,8 @@ caseSensitive(gld: GenLanguageDef s u r): Bool =
 
 //     }
 //     deriving ( Typeable )
-type GenLanguageDef s u r {
-  LanguageDef(Array Byte, // commentStart
+pub type GenLanguageDef s u r {
+  pub LanguageDef(Array Byte, // commentStart
               Array Byte, // commentEnd
               Array Byte, // commentLine
               Bool, // nestedComments
@@ -132,8 +131,7 @@ type GenLanguageDef s u r {
 // type TokenParser st = GenTokenParser String st Identity
 type TokenParser st {
   GenTokenParser( Array Byte,
-                  st,
-                  Identity.Identity
+                  st
   )
 }
 
@@ -338,8 +336,8 @@ type TokenParser st {
 //         commaSep1        :: forall a . ParsecT s u m a -> ParsecT s u m [a]
 //     }
 //     deriving ( Typeable )
-type GenTokenParser s u a r {
-  TokenParser(Prim.ParsecT s u (Array Byte) r, // identifier
+pub type GenTokenParser s u a r {
+  pub TokenParser(Prim.ParsecT s u (Array Byte) r, // identifier
               Array Byte -> Prim.ParsecT s u () r, // reserved
               Prim.ParsecT s u (Array Byte) r, // operator
               Array Byte -> Prim.ParsecT s u () r, // reservedOp
@@ -419,8 +417,8 @@ type GenTokenParser s u a r {
 // whiteSpace(gtp: GenTokenParser s u a r): Prim.ParsecT s u () r =
 //   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x
 
-// parens(gtp: GenTokenParser s u a r, p: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
-//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x(p)
+pub parens(gtp: GenTokenParser s u a r, p: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
+  let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x(p)
 
 // braces(gtp: GenTokenParser s u a r, p: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
 //   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_) = gtp in x(p)

@@ -23,5 +23,3 @@ pub module Rand = file "rand.mor" with { Array, Math }
 pub module State = file "state.mor" with { Iter }
 
 pub module Either = file "either.mor" with {Option, Array, Iter}
-
-pub module Identity = file "identity.mor"
