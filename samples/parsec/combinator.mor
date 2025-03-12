@@ -1,0 +1,370 @@
+import Core
+  expose {
+    module Array,
+    module Iter,
+    module State,
+    module Option,
+    module Either,
+    module Func,
+    module String
+  }
+
+import Pos
+import Error
+import Prim
+
+
+// -- | @choice ps@ tries to apply the parsers in the list @ps@ in order,
+// -- until one of them succeeds. Returns the value of the succeeding
+// -- parser.
+
+// choice :: (Stream s m t) => [ParsecT s u m a] -> ParsecT s u m a
+// {-# INLINABLE choice #-}
+// choice ps           = foldr (<|>) mzero ps
+pub choice(stream: Prim.Stream s t, ps: Array (Prim.ParsecT s u a r)): Prim.ParsecT s u a r =
+  Iter.foldr(Iter.items(ps), Prim.parserZero, Prim.tryOr)
+
+// -- | @option x p@ tries to apply parser @p@. If @p@ fails without
+// -- consuming input, it returns the value @x@, otherwise the value
+// -- returned by @p@.
+// --
+// -- >  priority  = option 0 (do{ d <- digit
+// -- >                          ; return (digitToInt d)
+// -- >                          })
+
+// option :: (Stream s m t) => a -> ParsecT s u m a -> ParsecT s u m a
+// {-# INLINABLE option #-}
+// option x p          = p <|> return x
+pub option(stream: Prim.Stream s t, x: a, p: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
+  Prim.tryOr(p, Prim.parserReturn(x))
+
+// -- | @optionMaybe p@ tries to apply parser @p@.  If @p@ fails without
+// -- consuming input, it return 'Nothing', otherwise it returns
+// -- 'Just' the value returned by @p@.
+
+// optionMaybe :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m (Maybe a)
+// {-# INLINABLE optionMaybe #-}
+// optionMaybe p       = option Nothing (liftM Just p)
+optionMaybe(stream: Prim.Stream s t, p: Prim.ParsecT s u a r): Prim.ParsecT s u (Option.Option a) r =
+  option(stream, Option.None, Prim.parsecMap(Option.Some, p))
+
+// -- | @optional p@ tries to apply parser @p@.  It will parse @p@ or nothing.
+// -- It only fails if @p@ fails after consuming input. It discards the result
+// -- of @p@.
+
+// optional :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m ()
+// {-# INLINABLE optional #-}
+// optional p          = do{ _ <- p; return ()} <|> return ()
+optional(stream: Prim.Stream s t, p: Prim.ParsecT s u a r): Prim.ParsecT s u () r =
+  panic("unimplemented")
+
+// -- | @between open close p@ parses @open@, followed by @p@ and @close@.
+// -- Returns the value returned by @p@.
+// --
+// -- >  braces  = between (symbol "{") (symbol "}")
+
+// between :: (Stream s m t) => ParsecT s u m open -> ParsecT s u m close
+//             -> ParsecT s u m a -> ParsecT s u m a
+// {-# INLINABLE between #-}
+// between open close p
+//                     = do{ _ <- open; x <- p; _ <- close; return x }
+pub between(stream: Prim.Stream s t, open: Prim.ParsecT s u open r, close: Prim.ParsecT s u close r, p: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
+  panic("unimplemented")
+
+// -- | @skipMany1 p@ applies the parser @p@ /one/ or more times, skipping
+// -- its result.
+
+// skipMany1 :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m ()
+// {-# INLINABLE skipMany1 #-}
+// skipMany1 p         = do{ _ <- p; skipMany p }
+// {-
+// skipMany p          = scan
+//                     where
+//                       scan  = do{ p; scan } <|> return ()
+// -}
+pub skipMany1(stream: Prim.Stream s t, p: Prim.ParsecT s u a r): Prim.ParsecT s u () r =
+  Prim.parserBind(p, \_ -> Prim.skipMany(p))
+
+// -- | @sepBy p sep@ parses /zero/ or more occurrences of @p@, separated
+// -- by @sep@. Returns a list of values returned by @p@.
+// --
+// -- >  commaSep p  = p `sepBy` (symbol ",")
+
+// sepBy :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m sep -> ParsecT s u m [a]
+// {-# INLINABLE sepBy #-}
+// sepBy p sep         = sepBy1 p sep <|> return []
+pub sepBy(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s u sep r): Prim.ParsecT s u (Array a) r =
+  Prim.tryOr(sepBy1(stream, p, sep), Prim.parserReturn([]))
+
+// -- | @sepBy1 p sep@ parses /one/ or more occurrences of @p@, separated
+// -- by @sep@. Returns a list of values returned by @p@.
+
+// sepBy1 :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m sep -> ParsecT s u m [a]
+// {-# INLINABLE sepBy1 #-}
+// sepBy1 p sep        = do{ x <- p
+//                         ; xs <- many (sep >> p)
+//                         ; return (x:xs)
+//                         }
+pub sepBy1(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s u sep r): Prim.ParsecT s u (Array a) r =
+  Prim.parserBind(p, \x -> Prim.parserBind(Prim.many(Prim.parserBind(sep, \_ -> p)), \xs -> Prim.parserReturn(Array.push_front(x, xs))))
+
+
+// -- | @sepEndBy1 p sep@ parses /one/ or more occurrences of @p@,
+// -- separated and optionally ended by @sep@. Returns a list of values
+// -- returned by @p@.
+
+// sepEndBy1 :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m sep -> ParsecT s u m [a]
+// {-# INLINABLE sepEndBy1 #-}
+// sepEndBy1 p sep     = do{ x <- p
+//                         ; do{ _ <- sep
+//                             ; xs <- sepEndBy p sep
+//                             ; return (x:xs)
+//                             }
+//                           <|> return [x]
+//                         }
+sepEndBy1(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s u sep r): Prim.ParsecT s u (Array a) r =
+  Prim.parserBind(p, \x -> Prim.tryOr(Prim.parserBind(sep, \_ -> Prim.parserBind(sepEndBy(stream, p, sep), \xs -> Prim.parserReturn(Array.push_front(x, xs)))), Prim.parserReturn([x])))
+
+// -- | @sepEndBy p sep@ parses /zero/ or more occurrences of @p@,
+// -- separated and optionally ended by @sep@, ie. haskell style
+// -- statements. Returns a list of values returned by @p@.
+// --
+// -- >  haskellStatements  = haskellStatement `sepEndBy` semi
+
+// sepEndBy :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m sep -> ParsecT s u m [a]
+// {-# INLINABLE sepEndBy #-}
+// sepEndBy p sep      = sepEndBy1 p sep <|> return []
+sepEndBy(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s u sep r): Prim.ParsecT s u (Array a) r =
+  Prim.tryOr(sepEndBy1(stream, p, sep), Prim.parserReturn([]))
+
+
+// -- | @endBy1 p sep@ parses /one/ or more occurrences of @p@, separated
+// -- and ended by @sep@. Returns a list of values returned by @p@.
+
+// endBy1 :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m sep -> ParsecT s u m [a]
+// {-# INLINABLE endBy1 #-}
+// endBy1 p sep        = many1 (do{ x <- p; _ <- sep; return x })
+endBy1(stream: Prim.Stream s r, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s u sep r): Prim.ParsecT s u (Array a) r =
+  Prim.many1(Prim.parserBind(p, \x -> Prim.parserBind(sep, \_ -> Prim.parserReturn(x))))
+
+// -- | @endBy p sep@ parses /zero/ or more occurrences of @p@, separated
+// -- and ended by @sep@. Returns a list of values returned by @p@.
+// --
+// -- >   cStatements  = cStatement `endBy` semi
+
+// endBy :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m sep -> ParsecT s u m [a]
+// {-# INLINABLE endBy #-}
+// endBy p sep         = many (do{ x <- p; _ <- sep; return x })
+endBy(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s u sep r): Prim.ParsecT s u (Array a) r =
+  Prim.many(Prim.parserBind(p, \x -> Prim.parserBind(sep, \_ -> Prim.parserReturn(x))))
+
+// -- | @count n p@ parses @n@ occurrences of @p@. If @n@ is smaller or
+// -- equal to zero, the parser equals to @return []@. Returns a list of
+// -- @n@ values returned by @p@.
+
+// count :: (Stream s m t) => Int -> ParsecT s u m a -> ParsecT s u m [a]
+// {-# INLINABLE count #-}
+// count n p           | n <= 0    = return []
+//                     | otherwise = sequence (replicate n p)
+count(stream: Prim.Stream s t, n: Int, p: Prim.ParsecT s u a r): Prim.ParsecT s u (Array a) r =
+  if n <= 0 {
+    Prim.parserReturn([])
+  } else {
+    Prim.parserSequence(Array.fill(n, p))
+  }
+
+// -- | @chainr p op x@ parses /zero/ or more occurrences of @p@,
+// -- separated by @op@ Returns a value obtained by a /right/ associative
+// -- application of all functions returned by @op@ to the values returned
+// -- by @p@. If there are no occurrences of @p@, the value @x@ is
+// -- returned.
+
+// chainr :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m (a -> a -> a) -> a -> ParsecT s u m a
+// {-# INLINABLE chainr #-}
+// chainr p op x       = chainr1 p op <|> return x
+chainr(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((a, a) -> a) r, x: a): Prim.ParsecT s u a r =
+  Prim.tryOr(chainr1(stream, p, op), Prim.parserReturn(x))
+
+// -- | @chainl p op x@ parses /zero/ or more occurrences of @p@,
+// -- separated by @op@. Returns a value obtained by a /left/ associative
+// -- application of all functions returned by @op@ to the values returned
+// -- by @p@. If there are zero occurrences of @p@, the value @x@ is
+// -- returned.
+
+// chainl :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m (a -> a -> a) -> a -> ParsecT s u m a
+// {-# INLINABLE chainl #-}
+// chainl p op x       = chainl1 p op <|> return x
+chainl(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((a, a) -> a) r, x: a): Prim.ParsecT s u a r =
+  Prim.tryOr(chainl1(stream, p, op), Prim.parserReturn(x))
+
+// -- | @chainl1 p op@ parses /one/ or more occurrences of @p@,
+// -- separated by @op@ Returns a value obtained by a /left/ associative
+// -- application of all functions returned by @op@ to the values returned
+// -- by @p@. This parser can for example be used to eliminate left
+// -- recursion which typically occurs in expression grammars.
+// --
+// -- >  expr    = term   `chainl1` addop
+// -- >  term    = factor `chainl1` mulop
+// -- >  factor  = parens expr <|> integer
+// -- >
+// -- >  mulop   =   do{ symbol "*"; return (*)   }
+// -- >          <|> do{ symbol "/"; return (div) }
+// -- >
+// -- >  addop   =   do{ symbol "+"; return (+) }
+// -- >          <|> do{ symbol "-"; return (-) }
+
+// chainl1 :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m (a -> a -> a) -> ParsecT s u m a
+// {-# INLINABLE chainl1 #-}
+// chainl1 p op        = do{ x <- p; rest x }
+//                     where
+//                       rest x    = do{ f <- op
+//                                     ; y <- p
+//                                     ; rest (f x y)
+//                                     }
+//                                 <|> return x
+chainl1(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((a, a) -> a) r): Prim.ParsecT s u a r =
+  Prim.parserBind(p, \x -> chainl1Rest(p, op, x))
+
+chainl1Rest(p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((a, a) -> a) r, x: a): Prim.ParsecT s u a r =
+  Prim.parserBind(op, \f -> Prim.parserBind(p, \y -> chainl1Rest(p, op, f(x, y))))
+
+// -- | @chainr1 p op x@ parses /one/ or more occurrences of |p|,
+// -- separated by @op@ Returns a value obtained by a /right/ associative
+// -- application of all functions returned by @op@ to the values returned
+// -- by @p@.
+
+// chainr1 :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m (a -> a -> a) -> ParsecT s u m a
+// {-# INLINABLE chainr1 #-}
+// chainr1 p op        = scan
+//                     where
+//                       scan      = do{ x <- p; rest x }
+
+//                       rest x    = do{ f <- op
+//                                     ; y <- scan
+//                                     ; return (f x y)
+//                                     }
+//                                 <|> return x
+chainr1(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((a, a) -> a) r): Prim.ParsecT s u a r =
+  chainr1Scan(p, op)
+
+chainr1Scan(p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((a, a) -> a) r): Prim.ParsecT s u a r =
+  Prim.parserBind(p, \x -> chainr1Rest(x, p, op))
+
+chainr1Rest(x: a, p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((a, a) -> a) r): Prim.ParsecT s u a r =
+  Prim.tryOr(Prim.parserBind(op, \f -> Prim.parserBind(chainr1Scan(p, op), \y -> Prim.parserReturn(f(x, y)))), Prim.parserReturn(x))
+
+
+// -----------------------------------------------------------
+// -- Tricky combinators
+// -----------------------------------------------------------
+// -- | The parser @anyToken@ accepts any kind of token. It is for example
+// -- used to implement 'eof'. Returns the accepted token.
+
+// anyToken :: (Stream s m t, Show t) => ParsecT s u m t
+// {-# INLINABLE anyToken #-}
+// anyToken            = tokenPrim show (\pos _tok _toks -> pos) Just
+anyToken(stream: Prim.Stream s t, show: String.Show t): Prim.ParsecT s u t r =
+  Prim.tokenPrim(stream, \t -> String.show(show, t), \(pos,_,_) -> pos, Option.Some)
+
+// -- | This parser only succeeds at the end of the input. This is not a
+// -- primitive parser but it is defined using 'notFollowedBy'.
+// --
+// -- >  eof  = notFollowedBy anyToken <?> "end of input"
+
+// eof :: (Stream s m t, Show t) => ParsecT s u m ()
+// {-# INLINABLE eof #-}
+// eof                 = notFollowedBy anyToken <?> "end of input"
+eof(stream: Prim.Stream s t, show: String.Show t): Prim.ParsecT s u () r =
+  Prim.withErr(notFollowedBy(stream, show, anyToken(stream, show)), "end of input")
+
+// -- | @notFollowedBy p@ only succeeds when parser @p@ fails. This parser
+// -- does not consume any input. This parser can be used to implement the
+// -- \'longest match\' rule. For example, when recognizing keywords (for
+// -- example @let@), we want to make sure that a keyword is not followed
+// -- by a legal identifier character, in which case the keyword is
+// -- actually an identifier (for example @lets@). We can program this
+// -- behaviour as follows:
+// --
+// -- >  keywordLet  = try (do{ string "let"
+// -- >                       ; notFollowedBy alphaNum
+// -- >                       })
+// --
+// -- __NOTE__: Currently, 'notFollowedBy' exhibits surprising behaviour
+// -- when applied to a parser @p@ that doesn't consume any input;
+// -- specifically
+// --
+// --  - @'notFollowedBy' . 'notFollowedBy'@ is /not/ equivalent to 'lookAhead', and
+// --
+// --  - @'notFollowedBy' 'eof'@ /never/ fails.
+// --
+// -- See [haskell/parsec#8](https://github.com/haskell/parsec/issues/8)
+// -- for more details.
+
+// notFollowedBy :: (Stream s m t, Show a) => ParsecT s u m a -> ParsecT s u m ()
+// {-# INLINABLE notFollowedBy #-}
+// notFollowedBy p     = try (do{ c <- try p; unexpected (show c) }
+//                            <|> return ()
+//                           )
+pub notFollowedBy(stream: Prim.Stream s t, show: String.Show a, p: Prim.ParsecT s u a r): Prim.ParsecT s u () r =
+  Prim.try(Prim.tryOr(Prim.parserBind(Prim.try(p), \c -> Prim.unexpected(String.show(show, c))), Prim.parserReturn(())))
+
+// -- | @manyTill p end@ applies parser @p@ /zero/ or more times until
+// -- parser @end@ succeeds. Returns the list of values returned by @p@.
+// -- This parser can be used to scan comments:
+// --
+// -- >  simpleComment   = do{ string "<!--"
+// -- >                      ; manyTill anyChar (try (string "-->"))
+// -- >                      }
+// --
+// --    Note the overlapping parsers @anyChar@ and @string \"-->\"@, and
+// --    therefore the use of the 'try' combinator.
+
+// manyTill :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m end -> ParsecT s u m [a]
+// {-# INLINABLE manyTill #-}
+// manyTill p end      = scan
+//                     where
+//                       scan  = do{ _ <- end; return [] }
+//                             <|>
+//                               do{ x <- p; xs <- scan; return (x:xs) }
+manyTill(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, end: Prim.ParsecT s u end r): Prim.ParsecT s u (Array a) r =
+  manyTillScan(p, end)
+
+manyTillScan(p: Prim.ParsecT s u a r, end: Prim.ParsecT s u end r): Prim.ParsecT s u (Array a) r =
+  Prim.tryOr(Prim.parserBind(end, \_ -> Prim.parserReturn([])), Prim.parserBind(p, \x -> Prim.parserBind(manyTillScan(p, end), \xs -> Prim.parserReturn(Array.push_front(x, xs)))))
+
+// -- | @parserTrace label@ is an impure function, implemented with "Debug.Trace" that
+// -- prints to the console the remaining parser state at the time it is invoked.
+// -- It is intended to be used for debugging parsers by inspecting their intermediate states.
+// --
+// -- > *> parseTest (oneOf "aeiou"  >> parserTrace "label") "atest"
+// -- > label: "test"
+// -- > ...
+// --
+// -- @since 3.1.12.0
+// parserTrace :: (Show t, Stream s m t) => String -> ParsecT s u m ()
+// {-# INLINABLE parserTrace #-}
+// parserTrace s = pt <|> return ()
+//     where
+//         pt = try $ do
+//            x <- try $ many1 anyToken
+//            trace (s++": " ++ show x) $ try $ eof
+//            fail (show x)
+
+// -- | @parserTraced label p@ is an impure function, implemented with "Debug.Trace" that
+// -- prints to the console the remaining parser state at the time it is invoked.
+// -- It then continues to apply parser @p@, and if @p@ fails will indicate that
+// -- the label has been backtracked.
+// -- It is intended to be used for debugging parsers by inspecting their intermediate states.
+// --
+// -- > *>  parseTest (oneOf "aeiou"  >> parserTraced "label" (oneOf "nope")) "atest"
+// -- > label: "test"
+// -- > label backtracked
+// -- > parse error at (line 1, column 2):
+// -- > ...
+// --
+// -- @since 3.1.12.0
+// parserTraced :: (Stream s m t, Show t) => String -> ParsecT s u m b -> ParsecT s u m b
+// {-# INLINABLE parserTraced #-}
+// parserTraced s p = do
+//   parserTrace s
+//   p <|> trace (s ++ " backtracked") (fail s)

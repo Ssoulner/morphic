@@ -1,0 +1,1107 @@
+import Core
+  expose {
+    module Array,
+    module Iter,
+    module State,
+    module Option,
+    module Either,
+    module Func,
+    module String,
+    module Identity,
+    module Ord
+  }
+
+import Pos
+import Error
+import Char
+import Prim
+import Combinator
+
+
+
+// type LanguageDef st = GenLanguageDef String st Identity
+type LanguageDef st {
+  GenLanguageDef(Array Byte, st)
+}
+
+// -- | The @GenLanguageDef@ type is a record that contains all parameterizable
+// -- features of the "Text.Parsec.Token" module. The module "Text.Parsec.Language"
+// -- contains some default definitions.
+
+// data GenLanguageDef s u m
+//     = LanguageDef {
+
+//     -- | Describes the start of a block comment. Use the empty string if the
+//     -- language doesn't support block comments. For example \"\/*\".
+
+//     commentStart   :: String,
+commentStart(gld: GenLanguageDef s u r): Array Byte =
+  let LanguageDef(x,_,_,_,_,_,_,_,_,_,_) = gld in x
+
+
+//     -- | Describes the end of a block comment. Use the empty string if the
+//     -- language doesn't support block comments. For example \"*\/\".
+
+//     commentEnd     :: String,
+commentEnd(gld: GenLanguageDef s u r): Array Byte =
+  let LanguageDef(_,x,_,_,_,_,_,_,_,_,_) = gld in x
+
+//     -- | Describes the start of a line comment. Use the empty string if the
+//     -- language doesn't support line comments. For example \"\/\/\".
+
+//     commentLine    :: String,
+commentLine(gld: GenLanguageDef s u r): Array Byte =
+  let LanguageDef(_,_,x,_,_,_,_,_,_,_,_) = gld in x
+
+//     -- | Set to 'True' if the language supports nested block comments.
+
+//     nestedComments :: Bool,
+nestedComments(gld: GenLanguageDef s u r): Bool =
+  let LanguageDef(_,_,_,x,_,_,_,_,_,_,_) = gld in x
+
+
+//     -- | This parser should accept any start characters of identifiers. For
+//     -- example @letter \<|> char \'_\'@.
+
+//     identStart     :: ParsecT s u m Char,
+identStart(gld: GenLanguageDef s u r): Prim.ParsecT s u Byte r =
+  let LanguageDef(_,_,_,_,x,_,_,_,_,_,_) = gld in x
+
+//     -- | This parser should accept any legal tail characters of identifiers.
+//     -- For example @alphaNum \<|> char \'_\'@.
+
+//     identLetter    :: ParsecT s u m Char,
+identLetter(gld: GenLanguageDef s u r): Prim.ParsecT s u Byte r =
+  let LanguageDef(_,_,_,_,_,x,_,_,_,_,_) = gld in x
+
+//     -- | This parser should accept any start characters of operators. For
+//     -- example @oneOf \":!#$%&*+.\/\<=>?\@\\\\^|-~\"@
+
+//     opStart        :: ParsecT s u m Char,
+opStart(gld: GenLanguageDef s u r): Prim.ParsecT s u Byte r =
+  let LanguageDef(_,_,_,_,_,_,x,_,_,_,_) = gld in x
+
+//     -- | This parser should accept any legal tail characters of operators.
+//     -- Note that this parser should even be defined if the language doesn't
+//     -- support user-defined operators, or otherwise the 'reservedOp'
+//     -- parser won't work correctly.
+
+//     opLetter       :: ParsecT s u m Char,
+opLetter(gld: GenLanguageDef s u r): Prim.ParsecT s u Byte r =
+  let LanguageDef(_,_,_,_,_,_,_,x,_,_,_) = gld in x
+
+//     -- | The list of reserved identifiers.
+
+//     reservedNames  :: [String],
+reservedNames(gld: GenLanguageDef s u r): Array (Array Byte) =
+  let LanguageDef(_,_,_,_,_,_,_,_,x,_,_) = gld in x
+
+//     -- | The list of reserved operators.
+
+//     reservedOpNames:: [String],
+reservedOpNames(gld: GenLanguageDef s u r): Array (Array Byte) =
+  let LanguageDef(_,_,_,_,_,_,_,_,_,x,_) = gld in x
+
+//     -- | Set to 'True' if the language is case sensitive.
+
+//     caseSensitive  :: Bool
+caseSensitive(gld: GenLanguageDef s u r): Bool =
+  let LanguageDef(_,_,_,_,_,_,_,_,_,_,x) = gld in x
+
+//     }
+//     deriving ( Typeable )
+type GenLanguageDef s u r {
+  LanguageDef(Array Byte, // commentStart
+              Array Byte, // commentEnd
+              Array Byte, // commentLine
+              Bool, // nestedComments
+              Prim.ParsecT s u Byte r, // identStart
+              Prim.ParsecT s u Byte r, // identLetter
+              Prim.ParsecT s u Byte r, // opStart
+              Prim.ParsecT s u Byte r, // opLetter
+              Array (Array Byte), // reservedNames
+              Array (Array Byte), // reservedOpNames
+              Bool, // caseSensitive
+              )
+}
+
+// -----------------------------------------------------------
+// -- A first class module: TokenParser
+// -----------------------------------------------------------
+
+// type TokenParser st = GenTokenParser String st Identity
+type TokenParser st {
+  GenTokenParser( Array Byte,
+                  st,
+                  Identity.Identity
+  )
+}
+
+// -- | The type of the record that holds lexical parsers that work on
+// -- @s@ streams with state @u@ over a monad @m@.
+
+// data GenTokenParser s u m
+//     = TokenParser {
+
+//         -- | This lexeme parser parses a legal identifier. Returns the identifier
+//         -- string. This parser will fail on identifiers that are reserved
+//         -- words. Legal identifier (start) characters and reserved words are
+//         -- defined in the 'LanguageDef' that is passed to
+//         -- 'makeTokenParser'. An @identifier@ is treated as
+//         -- a single token using 'try'.
+
+//         identifier       :: ParsecT s u m String,
+
+//         -- | The lexeme parser @reserved name@ parses @symbol
+//         -- name@, but it also checks that the @name@ is not a prefix of a
+//         -- valid identifier. A @reserved@ word is treated as a single token
+//         -- using 'try'.
+
+//         reserved         :: String -> ParsecT s u m (),
+
+//         -- | This lexeme parser parses a legal operator. Returns the name of the
+//         -- operator. This parser will fail on any operators that are reserved
+//         -- operators. Legal operator (start) characters and reserved operators
+//         -- are defined in the 'LanguageDef' that is passed to
+//         -- 'makeTokenParser'. An @operator@ is treated as a
+//         -- single token using 'try'.
+
+//         operator         :: ParsecT s u m String,
+
+//         -- |The lexeme parser @reservedOp name@ parses @symbol
+//         -- name@, but it also checks that the @name@ is not a prefix of a
+//         -- valid operator. A @reservedOp@ is treated as a single token using
+//         -- 'try'.
+
+//         reservedOp       :: String -> ParsecT s u m (),
+
+
+//         -- | This lexeme parser parses a single literal character. Returns the
+//         -- literal character value. This parsers deals correctly with escape
+//         -- sequences. The literal character is parsed according to the grammar
+//         -- rules defined in the Haskell report (which matches most programming
+//         -- languages quite closely).
+
+//         charLiteral      :: ParsecT s u m Char,
+
+//         -- | This lexeme parser parses a literal string. Returns the literal
+//         -- string value. This parsers deals correctly with escape sequences and
+//         -- gaps. The literal string is parsed according to the grammar rules
+//         -- defined in the Haskell report (which matches most programming
+//         -- languages quite closely).
+
+//         stringLiteral    :: ParsecT s u m String,
+
+//         -- | This lexeme parser parses a natural number (a non-negative whole
+//         -- number). Returns the value of the number. The number can be
+//         -- specified in 'decimal', 'hexadecimal' or
+//         -- 'octal'. The number is parsed according to the grammar
+//         -- rules in the Haskell report.
+
+//         natural          :: ParsecT s u m Integer,
+
+//         -- | This lexeme parser parses an integer (a whole number). This parser
+//         -- is like 'natural' except that it can be prefixed with
+//         -- sign (i.e. \'-\' or \'+\'). Returns the value of the number. The
+//         -- number can be specified in 'decimal', 'hexadecimal'
+//         -- or 'octal'. The number is parsed according
+//         -- to the grammar rules in the Haskell report.
+
+//         integer          :: ParsecT s u m Integer,
+
+//         -- | This lexeme parser parses a floating point value. Returns the value
+//         -- of the number. The number is parsed according to the grammar rules
+//         -- defined in the Haskell report.
+
+//         float            :: ParsecT s u m Double,
+
+//         -- | This lexeme parser parses either 'natural' or a 'float'.
+//         -- Returns the value of the number. This parsers deals with
+//         -- any overlap in the grammar rules for naturals and floats. The number
+//         -- is parsed according to the grammar rules defined in the Haskell report.
+
+//         naturalOrFloat   :: ParsecT s u m (Either Integer Double),
+
+//         -- | Parses a non-negative whole number in the decimal system. Returns the
+//         -- value of the number.
+
+//         decimal          :: ParsecT s u m Integer,
+
+//         -- | Parses a non-negative whole number in the hexadecimal system. The
+//         -- number should be prefixed with \"x\" or \"X\". Returns the value of the
+//         -- number.
+
+//         hexadecimal      :: ParsecT s u m Integer,
+
+//         -- | Parses a non-negative whole number in the octal system. The number
+//         -- should be prefixed with \"o\" or \"O\". Returns the value of the
+//         -- number.
+
+//         octal            :: ParsecT s u m Integer,
+
+//         -- | Lexeme parser @symbol s@ parses 'string' @s@ and skips
+//         -- trailing white space.
+
+//         symbol           :: String -> ParsecT s u m String,
+
+//         -- | @lexeme p@ first applies parser @p@ and then the 'whiteSpace'
+//         -- parser, returning the value of @p@. Every lexical
+//         -- token (lexeme) is defined using @lexeme@, this way every parse
+//         -- starts at a point without white space. Parsers that use @lexeme@ are
+//         -- called /lexeme/ parsers in this document.
+//         --
+//         -- The only point where the 'whiteSpace' parser should be
+//         -- called explicitly is the start of the main parser in order to skip
+//         -- any leading white space.
+//         --
+//         -- >    mainParser  = do{ whiteSpace
+//         -- >                     ; ds <- many (lexeme digit)
+//         -- >                     ; eof
+//         -- >                     ; return (sum ds)
+//         -- >                     }
+
+//         lexeme           :: forall a. ParsecT s u m a -> ParsecT s u m a,
+
+//         -- | Parses any white space. White space consists of /zero/ or more
+//         -- occurrences of a 'space', a line comment or a block (multi
+//         -- line) comment. Block comments may be nested. How comments are
+//         -- started and ended is defined in the 'LanguageDef'
+//         -- that is passed to 'makeTokenParser'.
+
+//         whiteSpace       :: ParsecT s u m (),
+
+//         -- | Lexeme parser @parens p@ parses @p@ enclosed in parenthesis,
+//         -- returning the value of @p@.
+
+//         parens           :: forall a. ParsecT s u m a -> ParsecT s u m a,
+
+//         -- | Lexeme parser @braces p@ parses @p@ enclosed in braces (\'{\' and
+//         -- \'}\'), returning the value of @p@.
+
+//         braces           :: forall a. ParsecT s u m a -> ParsecT s u m a,
+
+//         -- | Lexeme parser @angles p@ parses @p@ enclosed in angle brackets (\'\<\'
+//         -- and \'>\'), returning the value of @p@.
+
+//         angles           :: forall a. ParsecT s u m a -> ParsecT s u m a,
+
+//         -- | Lexeme parser @brackets p@ parses @p@ enclosed in brackets (\'[\'
+//         -- and \']\'), returning the value of @p@.
+
+//         brackets         :: forall a. ParsecT s u m a -> ParsecT s u m a,
+
+//         -- | DEPRECATED: Use 'brackets'.
+
+//         squares          :: forall a. ParsecT s u m a -> ParsecT s u m a,
+
+//         -- | Lexeme parser |semi| parses the character \';\' and skips any
+//         -- trailing white space. Returns the string \";\".
+
+//         semi             :: ParsecT s u m String,
+
+//         -- | Lexeme parser @comma@ parses the character \',\' and skips any
+//         -- trailing white space. Returns the string \",\".
+
+//         comma            :: ParsecT s u m String,
+
+//         -- | Lexeme parser @colon@ parses the character \':\' and skips any
+//         -- trailing white space. Returns the string \":\".
+
+//         colon            :: ParsecT s u m String,
+
+//         -- | Lexeme parser @dot@ parses the character \'.\' and skips any
+//         -- trailing white space. Returns the string \".\".
+
+//         dot              :: ParsecT s u m String,
+
+//         -- | Lexeme parser @semiSep p@ parses /zero/ or more occurrences of @p@
+//         -- separated by 'semi'. Returns a list of values returned by
+//         -- @p@.
+
+//         semiSep          :: forall a . ParsecT s u m a -> ParsecT s u m [a],
+
+//         -- | Lexeme parser @semiSep1 p@ parses /one/ or more occurrences of @p@
+//         -- separated by 'semi'. Returns a list of values returned by @p@.
+
+//         semiSep1         :: forall a . ParsecT s u m a -> ParsecT s u m [a],
+
+//         -- | Lexeme parser @commaSep p@ parses /zero/ or more occurrences of
+//         -- @p@ separated by 'comma'. Returns a list of values returned
+//         -- by @p@.
+
+//         commaSep         :: forall a . ParsecT s u m a -> ParsecT s u m [a],
+
+//         -- | Lexeme parser @commaSep1 p@ parses /one/ or more occurrences of
+//         -- @p@ separated by 'comma'. Returns a list of values returned
+//         -- by @p@.
+
+//         commaSep1        :: forall a . ParsecT s u m a -> ParsecT s u m [a]
+//     }
+//     deriving ( Typeable )
+type GenTokenParser s u a r {
+  TokenParser(Prim.ParsecT s u (Array Byte) r, // identifier
+              Array Byte -> Prim.ParsecT s u () r, // reserved
+              Prim.ParsecT s u (Array Byte) r, // operator
+              Array Byte -> Prim.ParsecT s u () r, // reservedOp
+              Prim.ParsecT s u Byte r, // charLiteral
+              Prim.ParsecT s u (Array Byte) r, // stringLiteral
+              Prim.ParsecT s u Int r, // natural
+              Prim.ParsecT s u Int r, // integer
+              Prim.ParsecT s u Float r, // float
+              Prim.ParsecT s u (Either.Either Int Float) r, // naturalOrFloat
+              Prim.ParsecT s u Int r, // decimal
+              Prim.ParsecT s u Int r, // hexadecimal
+              Prim.ParsecT s u Int r, // octal
+              Array Byte -> Prim.ParsecT s u (Array Byte) r, // symbol
+              Prim.ParsecT s u a r -> Prim.ParsecT s u a r, // lexeme
+              Prim.ParsecT s u () r, // whiteSpace
+              Prim.ParsecT s u a r -> Prim.ParsecT s u a r, // parens
+              Prim.ParsecT s u a r -> Prim.ParsecT s u a r, // braces
+              Prim.ParsecT s u a r -> Prim.ParsecT s u a r, // angles
+              Prim.ParsecT s u a r -> Prim.ParsecT s u a r, // brackets
+              Prim.ParsecT s u a r -> Prim.ParsecT s u a r, // squares
+              Prim.ParsecT s u (Array Byte) r, // semi
+              Prim.ParsecT s u (Array Byte) r, // comma
+              Prim.ParsecT s u (Array Byte) r, // colon
+              Prim.ParsecT s u (Array Byte) r, // dot
+              Prim.ParsecT s u a r -> Prim.ParsecT s u (Array a) r, // semiSep
+              Prim.ParsecT s u a r -> Prim.ParsecT s u (Array a) r, // semiSep1
+              Prim.ParsecT s u a r -> Prim.ParsecT s u (Array a) r, // commaSep
+              Prim.ParsecT s u a r -> Prim.ParsecT s u (Array a) r, // commaSep1
+              )
+}
+
+// identifier(gtp: GenTokenParser s u a r): Prim.ParsecT s u (Array Byte) r =
+//   let TokenParser(x,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x
+
+// reserved(gtp: GenTokenParser s u a r, txt: Array Byte): Prim.ParsecT s u () r =
+//   let TokenParser(_,x,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x(txt)
+
+// operator(gtp: GenTokenParser s u a r): Prim.ParsecT s u (Array Byte) r =
+//   let TokenParser(_,_,x,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x
+
+// reservedOp(gtp: GenTokenParser s u a r, txt: Array Byte): Prim.ParsecT s u () r =
+//   let TokenParser(_,_,_,x,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x(txt)
+
+// charLiteral(gtp: GenTokenParser s u a r): Prim.ParsecT s u Byte r =
+//   let TokenParser(_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x
+
+// stringLiteral(gtp: GenTokenParser s u a r): Prim.ParsecT s u (Array Byte) r =
+//   let TokenParser(_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x
+
+// natural(gtp: GenTokenParser s u a r): Prim.ParsecT s u Int r =
+//   let TokenParser(_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x
+
+// integer(gtp: GenTokenParser s u a r): Prim.ParsecT s u Int r =
+//   let TokenParser(_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x
+
+// float(gtp: GenTokenParser s u a r): Prim.ParsecT s u Float r =
+//   let TokenParser(_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x
+
+// naturalOrFloat(gtp: GenTokenParser s u a r): Prim.ParsecT s u (Either.Either Int Float) r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x
+
+// decimal(gtp: GenTokenParser s u a r): Prim.ParsecT s u Int r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x
+
+// hexadecimal(gtp: GenTokenParser s u a r): Prim.ParsecT s u Int r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x
+
+// octal(gtp: GenTokenParser s u a r): Prim.ParsecT s u Int r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x
+
+// symbol(gtp: GenTokenParser s u a r): Prim.ParsecT s u (Array Byte) r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x
+
+// lexeme(gtp: GenTokenParser s u a r, p: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x(p)
+
+// whiteSpace(gtp: GenTokenParser s u a r): Prim.ParsecT s u () r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x
+
+// parens(gtp: GenTokenParser s u a r, p: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_,_) = gtp in x(p)
+
+// braces(gtp: GenTokenParser s u a r, p: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_,_) = gtp in x(p)
+
+// angles(gtp: GenTokenParser s u a r, p: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_,_) = gtp in x(p)
+
+// brackets(gtp: GenTokenParser s u a r, p: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_,_) = gtp in x(p)
+
+// squares(gtp: GenTokenParser s u a r, p: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_,_) = gtp in x(p)
+
+// semi(gtp: GenTokenParser s u a r): Prim.ParsecT s u (Array Byte) r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_,_) = gtp in x
+
+// comma(gtp: GenTokenParser s u a r): Prim.ParsecT s u (Array Byte) r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_,_) = gtp in x
+
+// colon(gtp: GenTokenParser s u a r): Prim.ParsecT s u (Array Byte) r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_,_) = gtp in x
+
+// dot(gtp: GenTokenParser s u a r): Prim.ParsecT s u (Array Byte) r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_,_) = gtp in x
+
+// semiSep(gtp: GenTokenParser s u a r, p: Prim.ParsecT s u a r): Prim.ParsecT s u (Array a) r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_,_) = gtp in x(p)
+
+// semiSep1(gtp: GenTokenParser s u a r, p: Prim.ParsecT s u a r): Prim.ParsecT s u (Array a) r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_,_) = gtp in x(p)
+
+// commaSep(gtp: GenTokenParser s u a r, p: Prim.ParsecT s u a r): Prim.ParsecT s u (Array a) r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x,_) = gtp in x(p)
+
+// commaSep1(gtp: GenTokenParser s u a r, p: Prim.ParsecT s u a r): Prim.ParsecT s u (Array a) r =
+//   let TokenParser(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,x) = gtp in x(p)
+
+// -----------------------------------------------------------
+// -- Given a LanguageDef, create a token parser.
+// -----------------------------------------------------------
+
+// -- | The expression @makeTokenParser language@ creates a 'GenTokenParser'
+// -- record that contains lexical parsers that are
+// -- defined using the definitions in the @language@ record.
+// --
+// -- The use of this function is quite stylized - one imports the
+// -- appropriate language definition and selects the lexical parsers that
+// -- are needed from the resulting 'GenTokenParser'.
+// --
+// -- >  module Main where
+// -- >
+// -- >  import Text.Parsec
+// -- >  import qualified Text.Parsec.Token as P
+// -- >  import Text.Parsec.Language (haskellDef)
+// -- >
+// -- >  -- The parser
+// -- >  ...
+// -- >
+// -- >  expr  =   parens expr
+// -- >        <|> identifier
+// -- >        <|> ...
+// -- >
+// -- >
+// -- >  -- The lexer
+// -- >  lexer       = P.makeTokenParser haskellDef
+// -- >
+// -- >  parens      = P.parens lexer
+// -- >  braces      = P.braces lexer
+// -- >  identifier  = P.identifier lexer
+// -- >  reserved    = P.reserved lexer
+// -- >  ...
+
+// makeTokenParser :: (Stream s m Char)
+//                 => GenLanguageDef s u m -> GenTokenParser s u m
+// {-# INLINABLE makeTokenParser #-}
+// makeTokenParser languageDef
+//     = TokenParser{ identifier = identifier
+//                  , reserved = reserved
+//                  , operator = operator
+//                  , reservedOp = reservedOp
+
+//                  , charLiteral = charLiteral
+//                  , stringLiteral = stringLiteral
+//                  , natural = natural
+//                  , integer = integer
+//                  , float = float
+//                  , naturalOrFloat = naturalOrFloat
+//                  , decimal = decimal
+//                  , hexadecimal = hexadecimal
+//                  , octal = octal
+
+//                  , symbol = symbol
+//                  , lexeme = lexeme
+//                  , whiteSpace = whiteSpace
+
+//                  , parens = parens
+//                  , braces = braces
+//                  , angles = angles
+//                  , brackets = brackets
+//                  , squares = brackets
+//                  , semi = semi
+//                  , comma = comma
+//                  , colon = colon
+//                  , dot = dot
+//                  , semiSep = semiSep
+//                  , semiSep1 = semiSep1
+//                  , commaSep = commaSep
+//                  , commaSep1 = commaSep1
+//                  }
+//     where
+
+//     -----------------------------------------------------------
+//     -- Bracketing
+//     -----------------------------------------------------------
+//     parens p        = between (symbol "(") (symbol ")") p
+//     braces p        = between (symbol "{") (symbol "}") p
+//     angles p        = between (symbol "<") (symbol ">") p
+//     brackets p      = between (symbol "[") (symbol "]") p
+
+//     semi            = symbol ";"
+//     comma           = symbol ","
+//     dot             = symbol "."
+//     colon           = symbol ":"
+
+//     commaSep p      = sepBy p comma
+//     semiSep p       = sepBy p semi
+
+//     commaSep1 p     = sepBy1 p comma
+//     semiSep1 p      = sepBy1 p semi
+
+makeTokenParser(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r): GenTokenParser s u a r =
+  let parens = \p -> Combinator.between(stream, symbol(stream, ld, [40b]), symbol(stream, ld, [41b]), p) in
+  let braces = \p -> Combinator.between(stream, symbol(stream, ld, [123b]), symbol(stream, ld, [125b]), p) in
+  let angles = \p -> Combinator.between(stream, symbol(stream, ld, [60b]), symbol(stream, ld, [62b]), p) in
+  let brackets = \p -> Combinator.between(stream, symbol(stream, ld, [91b]), symbol(stream, ld, [93b]), p) in
+  let semi = symbol(stream, ld, [59b]) in
+  let comma = symbol(stream, ld, [44b]) in
+  let colon = symbol(stream, ld, [58b]) in
+  let dot = symbol(stream, ld, [46b]) in
+  TokenParser(identifier(stream, ld),
+              \name -> reserved(stream, ld, name),
+              operator(stream, ld),
+              \name -> reservedOp(stream, ld, name),
+              charLiteral(stream,ld),
+              stringLiteral(stream),
+              natural(stream, ld),
+              integer(stream, ld),
+              float(stream, ld),
+              naturalOrFloat(stream, ld),
+              decimal(stream),
+              hexadecimal(stream),
+              octal(stream),
+              \name -> symbol(stream, ld, name),
+              \p -> lexeme(stream, ld, p),
+              whiteSpace(stream, ld),
+              \p -> parens(p),
+              \p -> braces(p),
+              \p -> angles(p),
+              \p -> brackets(p),
+              \p -> brackets(p),
+              semi,
+              comma,
+              colon,
+              dot,
+              \p -> Combinator.sepBy(stream, p, semi),
+              \p -> Combinator.sepBy1(stream, p, semi),
+              \p -> Combinator.sepBy(stream, p, comma),
+              \p -> Combinator.sepBy1(stream, p, comma)
+              )
+
+//     -----------------------------------------------------------
+//     -- Chars & Strings
+//     -----------------------------------------------------------
+//     charLiteral     = lexeme (between (char '\'')
+//                                       (char '\'' <?> "end of character")
+//                                       characterChar )
+//                     <?> "character"
+charLiteral(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r): Prim.ParsecT s u Byte r =
+  Prim.withErr(lexeme(stream, ld, Combinator.between(stream, Char.char(stream, 39b), Prim.withErr(Char.char(stream, 39b), "end of character"), characterChar(stream))), "character")
+
+//     characterChar   = charLetter <|> charEscape
+//                     <?> "literal character"
+characterChar(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
+  Prim.withErr(Prim.tryOr(charLetter(stream), charEscape(stream)), "literal character")
+
+//     charEscape      = do{ _ <- char '\\'; escapeCode }
+charEscape(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
+  Prim.parserBind(Char.char(stream, 92b), \_ -> escapeCode(stream))
+//     charLetter      = satisfy (\c -> (c /= '\'') && (c /= '\\') && (c > '\026'))
+charLetter(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
+  Char.satisfy(stream, \c -> !(c =& 39b) && !(c =& 92b) && panic("What is 026 here?"))
+
+
+
+//     stringLiteral   = lexeme (
+//                       do{ str <- between (char '"')
+//                                          (char '"' <?> "end of string")
+//                                          (many stringChar)
+//                         ; return (foldr (maybe id (:)) "" str)
+//                         }
+//                       <?> "literal string")
+stringLiteral(stream: Prim.Stream s Byte): Prim.ParsecT s u (Array Byte) r =
+  panic("not implemented")
+  // lexeme(Prim.parserBind(Combinator.between(stream, Char.char(stream, 34b), Prim.withErr(Char.char(stream, 34b), "end of string"), Prim.many(stringChar)), Prim.parserReturn(??)))
+
+//     stringChar      =   do{ c <- stringLetter; return (Just c) }
+//                     <|> stringEscape
+//                     <?> "string character"
+stringChar(stream: Prim.Stream s Byte): Prim.ParsecT s u (Option.Option Byte) r =
+  Prim.withErr(Prim.tryOr(Prim.parserBind(stringLetter(stream), \c -> Prim.parserReturn(Option.Some(c))), stringEscape(stream)), "literal string")
+
+//     stringLetter    = satisfy (\c -> (c /= '"') && (c /= '\\') && (c > '\026'))
+stringLetter(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
+  Char.satisfy(stream, \c -> !(c =& 34b) && !(c =& 92b) && (c >& 26b))
+
+//     stringEscape    = do{ _ <- char '\\'
+//                         ;     do{ _ <- escapeGap  ; return Nothing }
+//                           <|> do{ _ <- escapeEmpty; return Nothing }
+//                           <|> do{ esc <- escapeCode; return (Just esc) }
+//                         }
+stringEscape(stream: Prim.Stream s Byte): Prim.ParsecT s u (Option.Option Byte) r =
+  Prim.tryOr(Prim.tryOr(Prim.parserBind(Char.char(stream, 92b), \_ -> Prim.parserBind(escapeGap(stream), \_ -> Prim.parserReturn(Option.None))), Prim.parserBind(escapeEmpty(stream), \_ -> Prim.parserReturn(Option.None))), Prim.parserBind(escapeCode(stream), \esc -> Prim.parserReturn(Option.Some(esc))))
+
+//     escapeEmpty     = char '&'
+escapeEmpty(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
+  Char.char(stream, 38b)
+//     escapeGap       = do{ _ <- many1 space
+//                         ; char '\\' <?> "end of string gap"
+//                         }
+escapeGap(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
+  Prim.parserBind(Prim.many1(Char.space(stream)), \_ -> Prim.withErr(Char.char(stream, 92b), "end of string gap"))
+
+
+
+//     -- escape codes
+//     escapeCode      = charEsc <|> charNum <|> charAscii <|> charControl
+//                     <?> "escape code"
+escapeCode(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
+  Prim.withErr(Prim.tryOr(charEsc(stream), Prim.tryOr(charNum(stream), Prim.tryOr(charAscii(stream), charControl(stream)))), "escape code")
+
+//     charControl     = do{ _ <- char '^'
+//                         ; code <- upper
+//                         ; return (toEnum (fromEnum code - fromEnum 'A' + 1))
+//                         }
+charControl(stream: Prim.Stream s Byte): Prim.ParsecT s u a r =
+  // Prim.parserBind(Char.char(stream, 94b), \_ -> Prim.parserBind(Char.upper(stream), \code -> Prim.parserReturn(toEnum(fromEnum(code - fromEnum(65b) + 1)))))
+  panic("Not implemented: toEnum and forEnum need to be defined")
+
+//     charNum         = do{ code <- decimal
+//                                   <|> do{ _ <- char 'o'; number 8 octDigit }
+//                                   <|> do{ _ <- char 'x'; number 16 hexDigit }
+//                         ; if code > 0x10FFFF
+//                           then fail "invalid escape sequence"
+//                           else return (toEnum (fromInteger code))
+//                         }
+charNum(stream: Prim.Stream s Byte): Prim.ParsecT s u a r =
+  let tryOct = Prim.parserBind(Char.char(stream, 111b), \_ -> number(8, Char.octDigit(stream))) in
+  let tryHex = Prim.parserBind(Char.char(stream, 120b), \_ -> number(16, Char.hexDigit(stream))) in
+  let tryDecOctHex = Prim.tryOr(decimal(stream), Prim.tryOr(tryOct, tryHex)) in
+  Prim.parserBind(tryDecOctHex, \code -> panic("Not implemented because of hex"))
+
+//     charEsc         = choice (map parseEsc escMap)
+//                     where
+//                       parseEsc (c,code)     = do{ _ <- char c; return code }
+charEsc(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
+  let parseEsc = \(c, code) -> Prim.parserBind(Char.char(stream, c), \_ -> Prim.parserReturn(code)) in
+  Combinator.choice(stream, Array.map(escMap, \(c1, c2) -> parseEsc(c1, c2)))
+
+//     charAscii       = choice (map parseAscii asciiMap)
+//                     where
+//                       parseAscii (asc,code) = try (do{ _ <- string asc; return code })
+charAscii(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
+  let parseAscii = \(asc, code) -> Prim.try(Prim.parserBind(Char.string(stream, asc), \_ -> Prim.parserReturn(code))) in
+  Combinator.choice(stream, Array.map(asciiMap, parseAscii))
+
+
+//     -- escape code tables
+//     escMap          = zip ("abfnrtv\\\"\'") ("\a\b\f\n\r\t\v\\\"\'")
+escMap: Array (Byte, Byte) =
+  Array.zip([97b, 98b, 102b, 110b, 114b, 116b, 118b, 92b, 34b, 39b], [7b, 8b, 12b, 10b, 13b, 9b, 11b, 92b, 34b, 39b])
+//     asciiMap        = zip (ascii3codes ++ ascii2codes) (ascii3 ++ ascii2)
+asciiMap: Array (Array Byte, Byte) =
+  Array.zip(Array.concat(ascii3codes, ascii2codes), Array.concat(ascii3, ascii2))
+
+//     ascii2codes     = ["BS","HT","LF","VT","FF","CR","SO","SI","EM",
+//                        "FS","GS","RS","US","SP"]
+ascii2codes: Array (Array Byte) =
+  ["BS","HT","LF","VT","FF","CR","SO","SI","EM","FS","GS","RS","US","SP"]
+//     ascii3codes     = ["NUL","SOH","STX","ETX","EOT","ENQ","ACK","BEL",
+//                        "DLE","DC1","DC2","DC3","DC4","NAK","SYN","ETB",
+//                        "CAN","SUB","ESC","DEL"]
+ascii3codes: Array (Array Byte) =
+  ["NUL","SOH","STX","ETX","EOT","ENQ","ACK","BEL","DLE","DC1","DC2","DC3","DC4","NAK","SYN","ETB","CAN","SUB","ESC","DEL"]
+
+//     ascii2          = ['\BS','\HT','\LF','\VT','\FF','\CR','\SO','\SI',
+//                        '\EM','\FS','\GS','\RS','\US','\SP']
+ascii2: Array Byte =
+  [8b, 9b, 10b, 11b, 12b, 13b, 14b, 15b, 25b, 28b, 28b, 30b, 31b, 32b]
+//     ascii3          = ['\NUL','\SOH','\STX','\ETX','\EOT','\ENQ','\ACK',
+//                        '\BEL','\DLE','\DC1','\DC2','\DC3','\DC4','\NAK',
+//                        '\SYN','\ETB','\CAN','\SUB','\ESC','\DEL']
+ascii3: Array Byte =
+  [0b, 1b, 2b, 3b, 4b, 5b, 6b, 7b, 16b, 17b, 18b, 19b, 20b, 21b, 22b, 23b, 24b, 26b, 27b, 127b]
+
+
+//     -----------------------------------------------------------
+//     -- Numbers
+//     -----------------------------------------------------------
+//     naturalOrFloat  = lexeme (natFloat) <?> "number"
+naturalOrFloat(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r): Prim.ParsecT s u (Either.Either Int Float) r =
+  Prim.withErr(lexeme(stream, ld, natFloat(stream)), "number")
+
+//     float           = lexeme floating   <?> "float"
+float(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r): Prim.ParsecT s u Float r =
+  Prim.withErr(lexeme(stream, ld, floating(stream)), "float")
+//     integer         = lexeme int        <?> "integer"
+integer(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r): Prim.ParsecT s u Int r =
+  Prim.withErr(lexeme(stream, ld, int(stream, ld)), "integer")
+//     natural         = lexeme nat        <?> "natural"
+natural(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r): Prim.ParsecT s u Int r =
+  Prim.withErr(lexeme(stream, ld, nat(stream)), "natural")
+
+
+//     -- floats
+//     floating        = do{ n <- decimal
+//                         ; fractExponent n
+//                         }
+floating(stream: Prim.Stream s Byte): Prim.ParsecT s u Float r =
+  Prim.parserBind(decimal(stream), \n -> fractExponent(stream, n))
+
+
+//     natFloat        = do{ _ <- char '0'
+//                         ; zeroNumFloat
+//                         }
+//                       <|> decimalFloat
+natFloat(stream: Prim.Stream s Byte): Prim.ParsecT s u (Either.Either Int Float) r =
+  Prim.tryOr(Prim.parserBind(Char.char(stream, 48b), \_ -> zeroNumFloat(stream)), decimalFloat(stream))
+
+//     zeroNumFloat    =  do{ n <- hexadecimal <|> octal
+//                          ; return (Left n)
+//                          }
+//                     <|> decimalFloat
+//                     <|> fractFloat (0 :: Integer)
+//                     <|> return (Left 0)
+zeroNumFloat(stream: Prim.Stream s Byte): Prim.ParsecT s u (Either.Either Int Float) r =
+  Prim.tryOr(Prim.parserBind(Prim.tryOr(hexadecimal(stream), octal(stream)), \n -> Prim.parserReturn(Either.Left(n))), Prim.tryOr(decimalFloat(stream), Prim.tryOr(fractFloat(stream, 0), Prim.parserReturn(Either.Left(0)))))
+
+//     decimalFloat    = do{ n <- decimal
+//                         ; option (Left n)
+//                                  (fractFloat n)
+//                         }
+decimalFloat(stream: Prim.Stream s Byte): Prim.ParsecT s u (Either.Either Int Float) r =
+  Prim.parserBind(decimal(stream), \n -> Combinator.option(stream, Either.Left(n), fractFloat(stream, n)))
+
+//     fractFloat n    = do{ f <- fractExponent n
+//                         ; return (Right f)
+//                         }
+fractFloat(stream: Prim.Stream s Byte, n: Int): Prim.ParsecT s u (Either.Either Int Float) r =
+  Prim.parserBind(fractExponent(stream, n), \f -> Prim.parserReturn(Either.Right(f)))
+
+//     fractExponent n = do{ fract <- fraction
+//                         ; expo  <- option "" exponent'
+//                         ; readDouble (show n ++ fract ++ expo)
+//                         }
+//                     <|>
+//                       do{ expo <- exponent'
+//                         ; readDouble (show n ++ expo)
+//                         }
+//                       where
+//                         readDouble s =
+//                           case reads s of
+//                             [(x, "")] -> return x
+//                             _         -> parserZero
+fractExponent(stream: Prim.Stream s t, n: Int): Prim.ParsecT s u Float r =
+  panic("Not implemented yet")
+
+//     fraction        = do{ _ <- char '.'
+//                         ; digits <- many1 digit <?> "fraction"
+//                         ; return ('.' : digits)
+//                         }
+//                       <?> "fraction"
+
+//     exponent'       = do{ _ <- oneOf "eE"
+//                         ; sign' <- fmap (:[]) (oneOf "+-") <|> return ""
+//                         ; e <- decimal <?> "exponent"
+//                         ; return ('e' : sign' ++ show e)
+//                         }
+//                       <?> "exponent"
+
+
+//     -- integers and naturals
+//     int             = do{ f <- lexeme sign
+//                         ; n <- nat
+//                         ; return (f n)
+//                         }
+int(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r): Prim.ParsecT s u Int r =
+  Prim.parserBind(lexeme(stream, ld, sign(stream)), \f -> Prim.parserBind(nat(stream), \n -> Prim.parserReturn(f(n))))
+
+//     sign            =   (char '-' >> return negate)
+//                     <|> (char '+' >> return id)
+//                     <|> return id
+sign(stream: Prim.Stream s Byte): Prim.ParsecT s u (Int -> Int) r =
+  Prim.tryOr(Prim.parserBind(Char.char(stream, 45b), \_ -> Prim.parserReturn(\x -> -x)), Prim.tryOr(Prim.parserBind(Char.char(stream, 43b), \_ -> Prim.parserReturn(Func.id)), Prim.parserReturn(Func.id)))
+
+//     nat             = zeroNumber <|> decimal
+nat(stream: Prim.Stream s Byte): Prim.ParsecT s u Int r =
+  Prim.tryOr(zeroNumber(stream), decimal(stream))
+
+//     zeroNumber      = do{ _ <- char '0'
+//                         ; hexadecimal <|> octal <|> decimal <|> return 0
+//                         }
+//                       <?> ""
+zeroNumber(stream: Prim.Stream s Byte): Prim.ParsecT s u Int r =
+  Prim.withErr(Prim.parserBind(Char.char(stream, 48b), \_ -> Prim.tryOr(hexadecimal(stream), Prim.tryOr(octal(stream), Prim.tryOr(decimal(stream), Prim.parserReturn(0))))), "")
+
+//     decimal         = number 10 digit
+decimal(stream: Prim.Stream s Byte): Prim.ParsecT s u Int r =
+  number(10, Char.digit(stream))
+//     hexadecimal     = do{ _ <- oneOf "xX"; number 16 hexDigit }
+hexadecimal(stream: Prim.Stream s Byte): Prim.ParsecT s u Int r =
+  Prim.parserBind(Char.oneOf(stream, [120b, 88b]), \_ -> number(16, Char.hexDigit(stream)))
+//     octal           = do{ _ <- oneOf "oO"; number 8 octDigit  }
+octal(stream: Prim.Stream s Byte): Prim.ParsecT s u Int r =
+  Prim.parserBind(Char.oneOf(stream, [111b, 79b]), \_ -> number(8, Char.octDigit(stream)))
+
+//     number base baseDigit
+//         = do{ digits <- many1 baseDigit
+//             ; let n = foldl (\x d -> base*x + toInteger (digitToInt d)) 0 digits
+//             ; seq n (return n)
+//             }
+number(base: Int, baseDigit: Prim.ParsecT s u a r): Prim.ParsecT s u Int r =
+  // Prim.parserBind(Prim.many1(baseDigit), \digits -> Prim.parserReturn(Array.foldl(digits, 0, \(x, d) -> base*x + toInteger(digitToInt(d)))))
+  panic("toInteger needs to be implemented")
+
+//     -----------------------------------------------------------
+//     -- Operators & reserved ops
+//     -----------------------------------------------------------
+//     reservedOp name =
+//         lexeme $ try $
+//         do{ _ <- string name
+//           ; notFollowedBy (opLetter languageDef) <?> ("end of " ++ show name)
+//           }
+reservedOp(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r, name: Array Byte): Prim.ParsecT s u () r =
+  lexeme(stream, ld, Prim.try(Prim.parserBind(Char.string(stream, name), \_ -> Prim.withErr(Combinator.notFollowedBy(stream, String.showChar, opLetter(ld)), "end of .."))))
+
+//     operator =
+//         lexeme $ try $
+//         do{ name <- oper
+//           ; if (isReservedOp name)
+//              then unexpected ("reserved operator " ++ show name)
+//              else return name
+//           }
+operator(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r): Prim.ParsecT s u (Array Byte) r =
+  lexeme(stream, ld, Prim.try(Prim.parserBind(oper(ld), \name -> if isReservedOp(ld, name) {
+    Prim.unexpected("reserved operator")
+  } else {
+    Prim.parserReturn(name)
+  })))
+
+//     oper =
+//         do{ c <- (opStart languageDef)
+//           ; cs <- many (opLetter languageDef)
+//           ; return (c:cs)
+//           }
+//         <?> "operator"
+oper(ld: GenLanguageDef s u r): Prim.ParsecT s u (Array Byte) r =
+  Prim.withErr(Prim.parserBind(opStart(ld), \c -> Prim.parserBind(Prim.many(opLetter(ld)), \cs -> Prim.parserReturn(Array.push_front(c, cs)))), "operator")
+
+//     isReservedOp name =
+//         isReserved (sort (reservedOpNames languageDef)) name
+isReservedOp(ld: GenLanguageDef s u r, name: Array Byte): Bool =
+  isReserved(Array.sortBy(String.ordString, reservedOpNames(ld)), name)
+
+
+//     -----------------------------------------------------------
+//     -- Identifiers & Reserved words
+//     -----------------------------------------------------------
+//     reserved name =
+//         lexeme $ try $
+//         do{ _ <- caseString name
+//           ; notFollowedBy (identLetter languageDef) <?> ("end of " ++ show name)
+//           }
+reserved(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r, name: Array Byte): Prim.ParsecT s u () r =
+  lexeme(stream, ld, Prim.try(Prim.parserBind(caseString(stream, ld, name), \_ -> Prim.withErr(Combinator.notFollowedBy(stream, String.showChar, identLetter(ld)), "end of .."))))
+
+//     caseString name
+//         | caseSensitive languageDef  = string name
+//         | otherwise               = do{ walk name; return name }
+//         where
+//           walk []     = return ()
+//           walk (c:cs) = do{ _ <- caseChar c <?> msg; walk cs }
+
+//           caseChar c  | isAlpha c  = char (toLower c) <|> char (toUpper c)
+//                       | otherwise  = char c
+
+//           msg         = show name
+caseString(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r, name: Array Byte): Prim.ParsecT s u (Array Byte) r =
+  if caseSensitive(ld) {
+    Char.string(stream, name)
+  } else {
+    Prim.parserBind(caseStringWalk(stream, name, Iter.items(name)), \_ -> Prim.parserReturn(name))
+  }
+
+caseStringWalk(stream: Prim.Stream s Byte, name: Array Byte, ccs: Iter.Iter Byte): Prim.ParsecT s u () r =
+  match Iter.next(ccs) {
+    Option.None -> Prim.parserReturn(()),
+    Option.Some(c, cs) -> Prim.parserBind(Prim.withErr(caseStringCaseChar(stream, c), name), \_ -> caseStringWalk(stream, name, cs))
+  }
+
+caseStringCaseChar(stream: Prim.Stream s Byte, c: Byte): Prim.ParsecT s u Byte r =
+  if String.isAlpha(c) {
+    Prim.tryOr(Char.char(stream, String.toLower(c)), Char.char(stream, String.toUpper(c)))
+  } else {
+    Char.char(stream, c)
+  }
+
+//     identifier =
+//         lexeme $ try $
+//         do{ name <- ident
+//           ; if (isReservedName name)
+//              then unexpected ("reserved word " ++ show name)
+//              else return name
+//           }
+identifier(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r): Prim.ParsecT s u (Array Byte) r =
+  lexeme(stream, ld, Prim.try(Prim.parserBind(ident(ld), \name -> if isReservedName(ld, name) {
+    Prim.unexpected("reserved word")
+  } else {
+    Prim.parserReturn(name)
+  })))
+
+
+//     ident
+//         = do{ c <- identStart languageDef
+//             ; cs <- many (identLetter languageDef)
+//             ; return (c:cs)
+//             }
+//         <?> "identifier"
+ident(ld: GenLanguageDef s u r): Prim.ParsecT s u (Array Byte) r =
+  Prim.withErr(Prim.parserBind(identStart(ld), \c -> Prim.parserBind(Prim.many(identLetter(ld)), \cs -> Prim.parserReturn(Array.push_front(c, cs)))), "identifier")
+
+//     isReservedName name
+//         = isReserved theReservedNames caseName
+//         where
+//           caseName      | caseSensitive languageDef  = name
+//                         | otherwise               = map toLower name
+isReservedName(ld: GenLanguageDef s u r, name: Array Byte): Bool =
+  let caseName = if caseSensitive(ld) {
+    name
+  } else {
+    Array.map(name, String.toLower)
+  } in
+  isReserved(theReservedNames(ld), caseName)
+
+
+//     isReserved names name
+//         = scan names
+//         where
+//           scan []       = False
+//           scan (r:rs)   = case (compare r name) of
+//                             LT  -> scan rs
+//                             EQ  -> True
+//                             GT  -> False
+isReserved(names: Array (Array Byte), name: Array Byte): Bool =
+  isReservedScan(Iter.items(names), name)
+
+isReservedScan(names: Iter.Iter (Array Byte), name: Array Byte): Bool =
+  match Iter.next(names) {
+    Option.None -> False,
+    Option.Some(r, rs) -> match Ord.compare(String.ordString, r, name) {
+      Ord.LT -> isReservedScan(rs, name),
+      Ord.EQ -> True,
+      Ord.GT -> False
+    }
+  }
+
+//     theReservedNames
+//         | caseSensitive languageDef  = sort reserved
+//         | otherwise                  = sort . map (map toLower) $ reserved
+//         where
+//           reserved = reservedNames languageDef
+theReservedNames(ld: GenLanguageDef s u r): Array (Array Byte) =
+  let reserved = reservedNames(ld) in
+  if caseSensitive(ld) {
+    Array.sortBy(String.ordString, reserved)
+  } else {
+    Array.sortBy(String.ordString, Array.map(reserved, \xs -> Array.map(xs, String.toLower)))
+  }
+
+
+
+//     -----------------------------------------------------------
+//     -- White space & symbols
+//     -----------------------------------------------------------
+//     symbol name
+//         = lexeme (string name)
+symbol(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r, name: Array Byte): Prim.ParsecT s u (Array Byte) r =
+  lexeme(stream, ld, Char.string(stream, name))
+
+//     lexeme p
+//         = do{ x <- p; whiteSpace; return x  }
+lexeme(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r, p: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
+  Prim.parserBind(p, \x -> Prim.parserBind(whiteSpace(stream, ld), \_ -> Prim.parserReturn(x)))
+
+
+//     --whiteSpace
+//     whiteSpace
+//         | noLine && noMulti  = skipMany (simpleSpace <?> "")
+//         | noLine             = skipMany (simpleSpace <|> multiLineComment <?> "")
+//         | noMulti            = skipMany (simpleSpace <|> oneLineComment <?> "")
+//         | otherwise          = skipMany (simpleSpace <|> oneLineComment <|> multiLineComment <?> "")
+//         where
+//           noLine  = null (commentLine languageDef)
+//           noMulti = null (commentStart languageDef)
+whiteSpace(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r): Prim.ParsecT s u () r =
+  let noLine = Array.is_empty(commentLine(ld)) in
+  let noMulti = Array.is_empty(commentStart(ld)) in
+  if noLine && noMulti {
+    Prim.skipMany(Prim.withErr(simpleSpace(stream), ""))
+  } else if noLine {
+    Prim.skipMany(Prim.withErr(Prim.tryOr(simpleSpace(stream), multiLineComment(stream, ld)), ""))
+  } else if noMulti {
+    Prim.skipMany(Prim.withErr(Prim.tryOr(simpleSpace(stream), oneLineComment(stream, ld)), ""))
+  } else {
+    Prim.skipMany(Prim.withErr(Prim.tryOr(simpleSpace(stream), Prim.tryOr(oneLineComment(stream, ld), multiLineComment(stream, ld))), ""))
+  }
+
+
+//     simpleSpace =
+//         skipMany1 (satisfy isSpace)
+simpleSpace(stream: Prim.Stream s Byte): Prim.ParsecT s u () r =
+  Combinator.skipMany1(stream, Char.satisfy(stream, String.isSpace))
+
+//     oneLineComment =
+//         do{ _ <- try (string (commentLine languageDef))
+//           ; skipMany (satisfy (/= '\n'))
+//           ; return ()
+//           }
+oneLineComment(stream: Prim.Stream s Byte, languageDef: GenLanguageDef s u r): Prim.ParsecT s u () r =
+  Prim.parserBind(Prim.try(Char.string(stream, commentLine(languageDef))), \_ -> Prim.parserBind(Prim.skipMany(Char.satisfy(stream, \x -> !(x =& 10b))), \_ -> Prim.parserReturn(())))
+
+//     multiLineComment =
+//         do { _ <- try (string (commentStart languageDef))
+//            ; inComment
+//            }
+multiLineComment(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r): Prim.ParsecT s u () r =
+  Prim.parserBind(Prim.try(Char.string(stream, commentStart(ld))), \_ -> inComment(stream, ld))
+
+//     inComment
+//         | nestedComments languageDef  = inCommentMulti
+//         | otherwise                = inCommentSingle
+inComment(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r): Prim.ParsecT s u () r =
+  if nestedComments(ld) {
+    inCommentMulti(stream, ld)
+  } else {
+    inCommentSingle(stream, ld)
+  }
+
+//     inCommentMulti
+//         =   do{ _ <- try (string (commentEnd languageDef)) ; return () }
+//         <|> do{ multiLineComment                     ; inCommentMulti }
+//         <|> do{ skipMany1 (noneOf startEnd)          ; inCommentMulti }
+//         <|> do{ _ <- oneOf startEnd                  ; inCommentMulti }
+//         <?> "end of comment"
+//         where
+//           startEnd   = nub (commentEnd languageDef ++ commentStart languageDef)
+inCommentMulti(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r): Prim.ParsecT s u () r =
+  let startEnd = Array.nub(Array.concat(commentEnd(ld), commentStart(ld)), \(c1, c2) -> c1 =& c2) in
+  Prim.withErr(Prim.tryOr(Prim.parserBind(Prim.try(Char.string(stream, commentEnd(ld))), \_ -> Prim.parserReturn(())),
+  Prim.tryOr(Prim.parserBind(multiLineComment(stream, ld), \_ -> inCommentMulti(stream, ld)),
+  Prim.tryOr(Prim.parserBind(Combinator.skipMany1(stream, Char.noneOf(stream, startEnd)), \_ -> inCommentMulti(stream, ld)),
+  Prim.parserBind(Char.oneOf(stream, startEnd), \_ -> inCommentMulti(stream, ld))))), "end of comment")
+
+//     inCommentSingle
+//         =   do{ _ <- try (string (commentEnd languageDef)); return () }
+//         <|> do{ skipMany1 (noneOf startEnd)         ; inCommentSingle }
+//         <|> do{ _ <- oneOf startEnd                 ; inCommentSingle }
+//         <?> "end of comment"
+//         where
+//           startEnd   = nub (commentEnd languageDef ++ commentStart languageDef)
+inCommentSingle(stream: Prim.Stream s Byte, ld: GenLanguageDef s u r): Prim.ParsecT s u () r =
+  let startEnd = Array.nub(Array.concat(commentEnd(ld), commentStart(ld)), \(c1, c2) -> c1 =& c2) in
+  Prim.withErr(Prim.tryOr(Prim.parserBind(Prim.try(Char.string(stream, commentEnd(ld))), \_ -> Prim.parserReturn(())),
+  Prim.tryOr(Prim.parserBind(Combinator.skipMany1(stream, Char.noneOf(stream, startEnd)), \_ -> inCommentSingle(stream, ld)),
+  Prim.parserBind(Char.oneOf(stream, startEnd), \_ -> inCommentSingle(stream, ld)))), "end of comment")
