@@ -1,0 +1,541 @@
+module Core = file "lib/core/core.mor" expose {
+  module String,
+  module Func expose { id, compose },
+  module Option expose { Option { Some, None } },
+  module Result expose { Result { Ok, Err } },
+  module Array expose { reduce }
+}
+module Hashmap = file "lib/hashmap.mor"
+  with { Core }
+  expose {
+    HashMap, insert, get
+  }
+module Parse = file "lib/parse.mor"
+  with { Core }
+  expose { Parse, lazy }
+
+// whitespace
+ascii_space: Byte = 32b
+ascii_line_feed: Byte = 10b
+ascii_carriage_return: Byte = 13b
+ascii_tab: Byte = 9b
+
+// syntax
+ascii_zero: Byte = 48b
+ascii_nine: Byte = 57b
+ascii_star: Byte = 42b
+ascii_plus: Byte = 43b
+ascii_minus: Byte = 45b
+ascii_tilde: Byte = 126b
+ascii_and: Byte = 38b
+ascii_pipe: Byte = 124b
+ascii_lt: Byte = 60b
+ascii_eq: Byte = 61b
+ascii_dollar: Byte = 36b
+ascii_open_paren: Byte = 40b
+ascii_close_paren: Byte = 41b
+
+ascii_lower_a: Byte = 97b
+ascii_lower_z: Byte = 122b
+ascii_upper_a: Byte = 65b
+ascii_upper_z: Byte = 90b
+ascii_underscore: Byte = 95b
+
+space: Parse () =
+  Parse.skip_post(Parse.pure(())) <|
+  Parse.or(Parse.byte_eq(ascii_space)) <|
+  Parse.or(Parse.byte_eq(ascii_line_feed)) <|
+  Parse.or(Parse.byte_eq(ascii_carriage_return)) <|
+  Parse.byte_eq(ascii_tab)
+
+spaces: Parse () =
+  Parse.skip_many0(space)
+
+spaced(p: Parse a): Parse a =
+  Parse.between(spaces, spaces, p)
+
+paren(p: Parse a): Parse a =
+  Parse.between(Parse.byte_eq(ascii_open_paren), Parse.byte_eq(ascii_close_paren), p)
+
+p_basic: Parse Type =
+  paren(lazy(p_func))
+  |> Parse.or(Parse.skip_pre(p_word("int")) <| Parse.pure(Integer))
+  |> Parse.or(Parse.skip_pre(p_word("bool")) <| Parse.pure(Boolean))
+
+p_func(): Parse Type =
+  Parse.and_then(p_basic) <| \t1 ->
+  Parse.and_then(Parse.optional(Parse.skip_pre(p_word("->"), lazy(p_func)))) <| \t2_opt ->
+  Parse.pure(match t2_opt {
+    None -> t1,
+    Some(t2) -> Func(t1, t2)
+  })
+
+p_type(): Parse Type =
+  Parse.skip_pre(p_word("::"), p_func())
+
+p_digit: Parse Int =
+  Parse.byte_range(ascii_zero, ascii_nine)
+  |> Parse.map(\x -> byte_to_int(x -& ascii_zero))
+
+p_int: Parse Int =
+  Parse.skip_pre(Parse.not_followed_by(Parse.byte_eq(ascii_zero))) <|
+  Parse.many1_fold(p_digit, 0, \(accum, d) -> accum * 10 + d)
+
+p_boolean: Parse Bool =
+  Parse.skip_pre(Parse.lit("true"), Parse.pure(True))
+  |> Parse.or(Parse.skip_pre(Parse.lit("false"), Parse.pure(False)))
+
+p_bool: Parse NamedExpression =
+  Parse.map(p_boolean, \b -> NBool(b))
+
+p_num: Parse NamedExpression =
+  Parse.map(p_int, \i -> NNum(i))
+
+p_char: Parse Byte =
+  Parse.byte_range(ascii_lower_a, ascii_lower_z)
+  |> Parse.or(Parse.byte_range(ascii_upper_a, ascii_upper_z))
+  |> Parse.or(Parse.byte_eq(ascii_underscore))
+  |> Parse.or(Parse.byte_range(ascii_zero, ascii_nine))
+
+p_name: Parse (Array Byte) =
+  spaced(Parse.many1(p_char))
+  |> Parse.guard(\name -> !String.equal(name, "in"))
+  |> Parse.guard(\name -> !String.equal(name, "then"))
+  |> Parse.guard(\name -> !String.equal(name, "else"))
+
+p_var: Parse NamedExpression =
+  Parse.map(p_name, \name -> NVar(name))
+
+p_op: Parse Operator =
+  Parse.byte_eq(ascii_star)
+  |> Parse.or(Parse.byte_eq(ascii_plus))
+  |> Parse.or(Parse.byte_eq(ascii_minus))
+  |> Parse.or(Parse.byte_eq(ascii_tilde))
+  |> Parse.or(Parse.byte_eq(ascii_and))
+  |> Parse.or(Parse.byte_eq(ascii_pipe))
+  |> Parse.or(Parse.byte_eq(ascii_lt))
+  |> Parse.or(Parse.byte_eq(ascii_eq))
+  |> Parse.map(\b -> match b {
+    42b -> Mul,
+    43b -> Add,
+    45b -> Neg,
+    126b -> Not,
+    38b -> And,
+    124b -> Or,
+    60b -> Lt,
+    61b -> Eq,
+    _ -> panic("unreachable code")
+  })
+
+p_operator: Parse NamedExpression =
+  Parse.map(p_op, \op -> NOp(op))
+
+p_atom(): Parse NamedExpression =
+  paren(lazy(p_apply))
+  |> Parse.or(p_operator)
+  |> Parse.or(p_num)
+  |> Parse.or(p_bool)
+  |> Parse.or(p_var)
+  |> spaced()
+
+p_word(word: Array Byte): Parse () =
+  spaced(Parse.lit(word)) |> Parse.map(\_ -> ())
+
+// fun f(x) :: typ = e
+p_fun(): Parse NamedExpression =
+  Parse.and_then(Parse.skip_pre(p_word("fun"), p_name)) <| \f ->
+  Parse.and_then(paren(p_name)) <| \p ->
+  Parse.and_then(p_type()) <| \typ ->
+  Parse.and_then(Parse.skip_pre(p_word("="), lazy(p_apply))) <| \e_body ->
+  Parse.pure(NFun(f, p, typ, e_body),)
+
+// let x :: typ = e1 in e2
+p_let(): Parse NamedExpression =
+  Parse.and_then(Parse.skip_pre(p_word("let"), p_name)) <| \x ->
+  Parse.and_then(p_type()) <| \typ ->
+  Parse.and_then(Parse.skip_pre(p_word("="), lazy(p_apply))) <| \e_val ->
+  Parse.and_then(Parse.skip_pre(p_word("in"), lazy(p_apply))) <| \e_body ->
+  Parse.pure(NLet(x, typ, e_val, e_body))
+
+// if c then e1 else e2
+p_if(): Parse NamedExpression =
+  Parse.and_then(Parse.skip_pre(p_word("if"), lazy(p_apply))) <| \e_cond ->
+  Parse.and_then(Parse.skip_pre(p_word("then"), lazy(p_apply))) <| \e_true ->
+  Parse.and_then(Parse.skip_pre(p_word("else"), lazy(p_apply))) <| \e_false ->
+  Parse.pure(NIf(e_cond, e_true, e_false))
+
+p_expr(): Parse NamedExpression =
+  p_let() |> Parse.or(lazy(p_fun)) |> Parse.or(lazy(p_if)) |> Parse.or(lazy(p_atom))
+
+p_apply(): Parse NamedExpression =
+  Parse.many1(p_expr())
+  |> Parse.map(\exprs -> reduce(exprs, NApply))
+
+parse_expression(str: Array Byte): Option NamedExpression =
+  Parse.parse_all(str, p_apply())
+
+type Type {
+  Dummy,
+  Integer,
+  Boolean,
+  Func(Type, Type)
+}
+
+paren_func(typ: Type): Array Byte =
+  match typ {
+    Func(_, _) -> "(" |> String.concat(type_print(typ)) |> String.concat(")"),
+    _ -> type_print(typ)
+  }
+type_eq(type1: Type, type2: Type): Bool =
+  match (type1, type2) {
+    (Integer, Integer)           -> True,
+    (Boolean, Boolean)           -> True,
+    (Func(p1, r1), Func(p2, r2)) -> type_eq(p1, p2) && type_eq(r1, r2),
+    (_, _)                       -> False
+  }
+
+type_print(typ: Type): Array Byte =
+  match typ {
+    Dummy      -> "*",
+    Integer    -> "int",
+    Boolean    -> "bool",
+    Func(p, r) -> paren_func(p) |> String.concat(" -> ") |> String.concat(paren_func(r))
+  }
+
+type NamedExpression {
+  NVar(Array Byte),
+  NNum(Int),
+  NBool(Bool),
+  NOp(Operator),
+  NApply(NamedExpression, NamedExpression),
+  NLet(Array Byte, Type, NamedExpression, NamedExpression),
+  NFun(Array Byte, Array Byte, Type, NamedExpression),
+  NIf(NamedExpression, NamedExpression, NamedExpression)
+}
+
+dename(env: Array (Array Byte), named: NamedExpression): Expression =
+  match named {
+    NVar(name) -> match Array.find_index(env, \var -> String.equal(name, var)) {
+      None -> panic("variable not in scope: " |> String.concat(name)),
+      Some(idx) -> EVar(idx)
+    },
+    NNum(i) -> ENum(i),
+    NBool(b) -> EBool(b),
+    NOp(op) -> EOp(op),
+    NApply(f, x) -> EApply(dename(env, f), dename(env, x)),
+    NIf(c, t, f) -> EIf(dename(env, c), dename(env, t), dename(env, f)),
+    NLet(name, t, v, e) ->
+      let new_env = Array.push(env, name) in
+      let idx = Array.len(env) in
+      ELet(idx, t, dename(env, v), dename(new_env, e)),
+    NFun(f_name, x_name, t, e) ->
+      let new_env = env |> Array.push(f_name) |> Array.push(x_name) in
+      let (f_idx, x_idx) = (Array.len(env), Array.len(env) + 1) in
+      EFun(f_idx, x_idx, t, dename(new_env, e))
+  }
+
+dename_expression(named: NamedExpression): Expression =
+  dename([], named)
+
+// type definition for first-order syntax
+type Expression {
+  EVar(Int), // variables are identified by number
+  ENum(Int),
+  EBool(Bool),
+  EOp(Operator),
+  EApply(Expression, Expression),
+  ELet(Int, Type, Expression, Expression), // let x :: t = v in e
+  EFun(Int, Int, Type, Expression),        // fun f(x) :: t = e
+  EIf(Expression, Expression, Expression)  // if c then t else f
+}
+
+var_print(idx: Int): Array Byte =
+  String.concat("$", String.int_to_string(idx))
+
+expression_print(expr: Expression): Array Byte =
+  match expr {
+    EVar(i) -> var_print(i),
+    ENum(n) -> String.int_to_string(n),
+    EBool(b) -> String.bool_to_string(b),
+    EOp(op) -> operator_print(op),
+    EIf(c, t, f) -> "if "
+                    |> String.concat(expression_print(c))
+                    |> String.concat(" then ")
+                    |> String.concat(expression_print(t))
+                    |> String.concat(" else ")
+                    |> String.concat(expression_print(f)),
+    EApply(f, x) -> expression_print(f)
+                    |> String.concat("(")
+                    |> String.concat(expression_print(x))
+                    |> String.concat(")"),
+    ELet(i, _, v, e) -> "let "
+                        |> String.concat(var_print(i))
+                        |> String.concat(" = ")
+                        |> String.concat(expression_print(v))
+                        |> String.concat(" in ")
+                        |> String.concat(expression_print(e)),
+    EFun(i1, i2, _, e) -> "fun "
+                          |> String.concat(var_print(i1))
+                          |> String.concat(" ")
+                          |> String.concat(var_print(i2))
+                          |> String.concat(" = ")
+                          |> String.concat(expression_print(e))
+  }
+
+// type definition for higher-order syntax
+
+type MinHS {
+  HNum(Int),
+  HBool(Bool),
+  HApply(MinHS, MinHS),
+  HIf(MinHS, MinHS, MinHS),     // (If c t f)
+  HLet(MinHS, MinHS -> MinHS),  // (Let v x.e)
+  HLam(MinHS -> MinHS),         // (Lam x.e)
+  HFun(MinHS -> MinHS -> MinHS) // (Fun f.x.e)
+}
+
+minhs_print(minhs: MinHS): Array Byte =
+  match minhs {
+    HNum(i) -> String.int_to_string(i),
+    HBool(b) -> String.bool_to_string(b),
+    HApply(f, x) -> "(App "
+                    |> String.concat(minhs_print(f))
+                    |> String.concat(" ")
+                    |> String.concat(minhs_print(x))
+                    |> String.concat(")"),
+    HLet(v, _) -> "(Let "
+                    |> String.concat(minhs_print(v))
+                    |> String.concat(" (...))"),
+    _ -> "(...)"
+  }
+
+type Operator {
+  Neg, Not,
+  Add, Mul,
+  And, Or,
+  Eq, Lt
+}
+
+operator_print(op: Operator): Array Byte =
+  match op {
+    Neg -> "-",
+    Not -> "~",
+    Add -> "+",
+    Mul -> "*",
+    And -> "&",
+    Or -> "|",
+    Eq -> "=",
+    Lt -> "<"
+  }
+
+
+
+infer_type(env: HashMap Int Type, expr: Expression): Result Type (Expression, Type, Type) =
+  match expr {
+    ENum(_)  -> Ok(Integer),
+    EBool(_) -> Ok(Boolean),
+    EOp(op)  -> Ok(get_operator_type(op)),
+    EVar(id) -> match get(env, id) {
+      Some(typ) -> Ok(typ),
+      None      -> panic(String.concat("unbound variable: ", String.int_to_string(id)))
+    },
+    EIf(c, t, f) ->
+      let c_type_res = infer_type(env, c) in
+      let t_type_res = infer_type(env, t) in
+      let f_type_res = infer_type(env, f) in
+      match (c_type_res, t_type_res, f_type_res) {
+        (Ok(Boolean), Ok(t_type), Ok(f_type)) -> if type_eq(t_type, f_type) { Ok(t_type) } else { Err(f, t_type, f_type) },
+        (Ok(c_type), _, _) -> Err(c, Boolean, c_type),
+        (Err(_, _, _), _, _) -> c_type_res,
+        (_, Err(_, _, _), _) -> t_type_res,
+        (_, _, Err(_, _, _)) -> f_type_res,
+      },
+    EApply(f, x) ->
+      let f_type = infer_type(env, f) in
+      let x_type_res = infer_type(env, x) in
+      match x_type_res {
+        Ok(x_type) ->
+          match f_type {
+            Ok(Func(p, r)) -> if type_eq(p, x_type) { Ok(r) } else { Err(x, r, x_type) },
+            Ok(t)          -> Err(expr, Func(Dummy, Dummy), t),
+            Err(_, _, _)   -> f_type,
+          },
+        Err(_, _, _) -> x_type_res
+      },
+    ELet(id, typ, val, body) ->
+      match infer_type(env, val) {
+        Err(v, t1, t2) -> Err(v, t1, t2),
+        Ok(val_type) -> 
+          if type_eq(val_type, typ) {
+            infer_type(insert(env, id, typ), body)
+          } else {
+            Err(val, typ, val_type)
+          }
+      },
+    EFun(fun_id, par_id, typ, body) ->
+      match typ {
+        Func(p, r) ->
+          let new_env = env |> insert(fun_id, typ) |> insert(par_id, p) in
+          match infer_type(new_env, body) {
+            Err(v, t1, t2) -> Err(v, t1, t2),
+            Ok(body_type) ->
+              if type_eq(body_type, r) {
+                Ok(typ)
+              } else {
+                Err(body, r, body_type)
+              }
+          },
+        _ -> Err(expr, Func(Dummy, Dummy), typ)
+      }
+  }
+
+get_operator_type(operator: Operator): Type =
+  match operator {
+    Not -> Func(Boolean, Boolean),
+    Neg -> Func(Integer, Integer),
+    Add -> Func(Integer, Func(Integer, Integer)),
+    Mul -> Func(Integer, Func(Integer, Integer)),
+    And -> Func(Boolean, Func(Boolean, Boolean)),
+    Or  -> Func(Boolean, Func(Boolean, Boolean)),
+    Eq  -> Func(Integer, Func(Integer, Boolean)),
+    Lt  -> Func(Integer, Func(Integer, Boolean))
+  }
+
+substitution(var_idx: Int, minHs: MinHS): Int -> Result MinHS Int =
+  \i -> if var_idx = i { Ok(minHs) } else { Err(i) }
+
+compose_sub(s1: Int -> Result MinHS Int, s2: Int -> Result MinHS Int): Int -> Result MinHS Int =
+  \i -> Result.either(s1(i), s2(i))
+
+cant_apply1(op: Operator, minhs: MinHS): Array Byte =
+  "can't apply operator "
+  |> String.concat(operator_print(op))
+  |> String.concat(" to ")
+  |> String.concat(minhs_print(minhs))
+
+cant_apply2(op: Operator, minhs1: MinHS, minhs2: MinHS): Array Byte =
+  cant_apply1(op, minhs1)
+  |> String.concat(" and ")
+  |> String.concat(minhs_print(minhs2))
+
+lift_expression(expr: Expression, sub: Int -> Result MinHS Int): MinHS =
+  match expr {
+    EVar(i) -> Result.unwrap(sub(i)),
+    ENum(i) -> HNum(i),
+    EBool(b) -> HBool(b),
+    EOp(op) -> match op {
+      Neg -> HLam(\h_i ->
+        match eval(h_i) {
+          HNum(i) -> HNum(-i),
+          _ -> panic(cant_apply1(op, h_i))
+        }),
+      Not -> HLam(\h_b ->
+        match eval(h_b) {
+          HBool(b) -> HBool(!b),
+          _ -> panic(cant_apply1(op, h_b))
+        }),
+      Add ->
+        HLam() <| \h_x1 -> HLam() <| \h_x2 ->
+        match (eval(h_x1), eval(h_x2)) {
+          (HNum(x1), HNum(x2)) -> HNum(x1 + x2),
+          _ -> panic(cant_apply2(op, h_x1, h_x2))
+        },
+      Mul ->
+        HLam() <| \h_x1 -> HLam() <| \h_x2 ->
+        match (eval(h_x1), eval(h_x2)) {
+          (HNum(x1), HNum(x2)) -> HNum(x1 * x2),
+          _ -> panic(cant_apply2(op, h_x1, h_x2))
+        },
+      And ->
+        HLam() <| \h_b1 -> HLam() <| \h_b2 ->
+        match (eval(h_b1), eval(h_b2)) {
+          (HBool(b1), HBool(b2)) -> HBool(b1 && b2),
+          _ -> panic(cant_apply2(op, h_b1, h_b2))
+        },
+      Or ->
+        HLam() <| \h_b1 -> HLam() <| \h_b2 ->
+        match (eval(h_b1), eval(h_b2)) {
+          (HBool(b1), HBool(b2)) -> HBool(b1 || b2),
+          _ -> panic(cant_apply2(op, h_b1, h_b2))
+        },
+      Eq -> HLam() <| \h_x1 -> HLam() <| \h_x2 ->
+        match (eval(h_x1), eval(h_x2)) {
+          (HNum(x1), HNum(x2)) -> HBool(x1 = x2),
+          _ -> panic(cant_apply2(op, h_x1, h_x2))
+        },
+      Lt -> HLam() <| \h_x1 -> HLam() <| \h_x2 ->
+        match (eval(h_x1), eval(h_x2)) {
+          (HNum(x1), HNum(x2)) -> HBool(x1 < x2),
+          _ -> panic(cant_apply2(op, h_x1, h_x2))
+        }
+    },
+    EIf(c, t, f) -> HIf(lift_expression(c, sub), lift_expression(t, sub), lift_expression(f, sub)),
+    EApply(e1, e2) -> HApply(lift_expression(e1, sub), lift_expression(e2, sub)),
+    ELet(x_idx, _, v, e) ->
+      HLet(lift_expression(v, sub)) <| \x ->
+        let x_sub = substitution(x_idx, x) in
+        let new_sub = compose_sub(x_sub, sub) in
+        lift_expression(e, new_sub),
+    EFun(f_idx, x_idx, _, e) ->
+      HFun() <| \f -> \x ->
+        let f_sub = substitution(f_idx, f) in
+        let x_sub = substitution(x_idx, x) in
+        let new_sub = f_sub |> compose_sub(x_sub) |> compose_sub(sub) in
+        lift_expression(e, new_sub)
+  }
+
+eval(minhs: MinHS): MinHS =
+  match minhs {
+    HIf(c, t, f) -> match eval(c) {
+      HBool(True) -> eval(t),
+      HBool(False) -> eval(f),
+      _ -> panic("unreachable code")
+    },
+    HLet(x, f) -> f(x) |> eval(),
+    HApply(f, x) -> match eval(f) {
+      HLam(lam) -> lam(x) |> eval(),
+      HFun(fun) -> fun(f)(x) |> eval(),
+      _ -> panic("cannot apply "
+                |> String.concat(minhs_print(f))
+                |> String.concat(" to ")
+                |> String.concat(minhs_print(x)))
+    },
+    _ -> minhs
+  }
+
+run_program(source: Array Byte): Result MinHS (Array Byte) =
+  let expr_opt = parse_expression(source) in
+    match expr_opt {
+      None -> Err("Parse error"),
+      Some(named_expr) ->
+        let expr = dename_expression(named_expr) in
+        let env = Hashmap.empty(id, \(i1, i2) -> i1 = i2) in
+        match infer_type(env, expr) {
+          Ok(typ) -> Ok(lift_expression(expr, \i -> Err(i)) |> eval()),
+          Err(e, t1, t2) ->
+            let message = "Type error:"
+                        |> String.concat(expression_print(e))
+                        |> String.concat(" has type ")
+                        |> String.concat(type_print(t2))
+                        |> String.concat(" but expected type ")
+                        |> String.concat(type_print(t1)) in
+            Err(message)
+        }
+    }
+
+proc main (): () =
+  // let str = do input() in
+  // let str = "if true then 5 else 3" in
+  // let str = "let x :: int = 5 in x" in
+  // let str = "let f :: int -> int = + 5 in f (+ 5 (f 10))" in
+  // let str = "(fun $1($2) :: int -> int = + 1 $2) 5" in
+  // let str = "let $1 :: int -> int = (fun $1($2) :: int -> int = + 1 $2) in $1 5" in
+  // let str = "(fun $1($2) :: (int -> int) -> int -> int = (fun $3($4) :: int -> int = $2 ($2 $4)))" in
+  // let str = "let $1 :: (int -> int) -> int -> int = fun $1($2) :: (int -> int) -> int -> int = fun $3($4) :: int -> int = $2 ($2 $4) in $1 (+ 5) 4" in
+  // let str = "let f :: (int -> int) -> int -> int = fun twice(f) :: (int -> int) -> int -> int = fun twice_inner(x) :: int -> int = f (f x) in f (+ 5) 4" in
+  let num = do input() in // 15000
+  let str = "(fun f(x) :: (int -> int) = if = x " |> String.concat(num) |> String.concat(" then x else f (+ x 1)) 10") in
+  match run_program(str) {
+    Ok(res) -> do output(minhs_print(res)),
+    Err(message) -> do output(message)
+  }
