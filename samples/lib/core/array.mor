@@ -1,5 +1,6 @@
 import Iter expose { Iter }
 import Option expose { Option { Some, None } }
+import Ord
 
 // TODO: This is a temporary workaround.  We should have a namespacing system for builtins.
 module NoShadow = {
@@ -177,3 +178,35 @@ pub str(arr: Array a, s: a -> Array Byte): Array Byte =
     )
     |> concat(s(get(arr, n)))
     |> concat("]")
+
+pub elem(a: a, arr: Array a, eqA: (a, a) -> Bool): Bool =
+  foldl(arr, False, \(accum, a1) -> if accum {
+    True
+  } else {
+    eqA(a, a1)
+  })
+
+pub sortBy(ord: Ord.Ord a, xs: Array a): Array a =
+  foldl(xs, [], \(ys, x) -> insertBy(ord, x, ys))
+
+pub insertBy(ord: Ord.Ord a, x: a, ys: Array a): Array a =
+  if is_empty(ys) {
+    push(ys, x)
+  } else {
+    let ys2 = slice(ys, 1, len(ys)) in
+    let y = get(ys, 0) in
+    let o = Ord.compare(ord, x, y) in
+    match o {
+      Ord.GT -> push_front(y, insertBy(ord, x, ys2)),
+      _  -> push_front(x, ys)
+    }
+  }
+
+pub nub(arr: Array a, eq: (a, a) -> Bool): Array a =
+  nubIter(Iter.items(arr), eq)
+
+nubIter(it: Iter.Iter a, eq: (a, a) -> Bool): Array a =
+  match Iter.next(it) {
+    Option.Some(x, xs) -> push_front(x, nubIter(Iter.filter(xs, \y -> !(eq(x, y))), eq)),
+    Option.None -> from_iter(Iter.empty)
+  }
