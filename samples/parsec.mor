@@ -1,0 +1,29 @@
+pub module Core = file "lib/core/core.mor"
+
+pub module Pos = file "parsec/pos.mor" with { Core }
+
+pub module Error = file "parsec/error.mor" with { Core, Pos }
+
+pub module Prim = file "parsec/prim.mor" with { Core, Pos, Error }
+
+pub module Char = file "parsec/char.mor" with { Core, Pos, Error, Prim }
+
+pub module Combinator = file "parsec/combinator.mor" with { Core, Pos, Error, Prim }
+
+pub module Expr = file "parsec/expr.mor" with { Core, Prim, Combinator }
+
+pub module Token = file "parsec/token.mor" with { Core, Char, Pos, Error, Prim, Combinator }
+
+// pub module Perm = file "parsec/perm.mor" with { Core, Prim, Combinator }
+
+// pub module ByteString = file "parsec/bytestring.mor"
+
+// pub module Language = file "parsec/language.mor"
+
+// pub module String = file "parsec/string.mor"
+
+// pub module Text = file "parsec/text.mor"
+
+
+
+proc main(): () = do output("It worked!\n")

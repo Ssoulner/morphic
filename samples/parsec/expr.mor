@@ -1,0 +1,222 @@
+import Core
+  expose {
+    module Array,
+    module Iter,
+    module State,
+    module Option,
+    module Either,
+    module Func,
+    module String,
+    module Identity,
+    module Ord
+  }
+
+import Prim
+import Combinator
+
+
+// -- |  This data type specifies the associativity of operators: left, right
+// -- or none.
+
+// data Assoc                = AssocNone
+//                           | AssocLeft
+//                           | AssocRight
+//    deriving ( Typeable )
+pub type Assoc {
+  pub AssocNone,
+  pub AssocLeft,
+  pub AssocRight
+}
+
+// -- | This data type specifies operators that work on values of type @a@.
+// -- An operator is either binary infix or unary prefix or postfix. A
+// -- binary operator has also an associated associativity.
+
+// data Operator s u m a   = Infix (ParsecT s u m (a -> a -> a)) Assoc
+//                         | Prefix (ParsecT s u m (a -> a))
+//                         | Postfix (ParsecT s u m (a -> a))
+//     deriving ( Typeable )
+type Operator s u a r {
+  Infix(Prim.ParsecT s u ((a, a) -> a) r, Assoc),
+  Prefix(Prim.ParsecT s u (a -> a) r),
+  Postfix(Prim.ParsecT s u (a -> a) r)
+}
+
+// -- | An @OperatorTable s u m a@ is a list of @Operator s u m a@
+// -- lists. The list is ordered in descending
+// -- precedence. All operators in one list have the same precedence (but
+// -- may have a different associativity).
+
+// type OperatorTable s u m a = [[Operator s u m a]]
+// type OperatorTable s u a r {
+//   OperatorTable(Array (Array (Operator s u a r)))
+// }
+
+// -----------------------------------------------------------
+// -- Convert an OperatorTable and basic term parser into
+// -- a full fledged expression parser
+// -----------------------------------------------------------
+
+// -- | @buildExpressionParser table term@ builds an expression parser for
+// -- terms @term@ with operators from @table@, taking the associativity
+// -- and precedence specified in @table@ into account. Prefix and postfix
+// -- operators of the same precedence can only occur once (i.e. @--2@ is
+// -- not allowed if @-@ is prefix negate). Prefix and postfix operators
+// -- of the same precedence associate to the left (i.e. if @++@ is
+// -- postfix increment, than @-2++@ equals @-1@, not @-3@).
+// --
+// -- The @buildExpressionParser@ takes care of all the complexity
+// -- involved in building expression parser. Here is an example of an
+// -- expression parser that handles prefix signs, postfix increment and
+// -- basic arithmetic.
+// --
+// -- >  expr    = buildExpressionParser table term
+// -- >          <?> "expression"
+// -- >
+// -- >  term    =  parens expr
+// -- >          <|> natural
+// -- >          <?> "simple expression"
+// -- >
+// -- >  table   = [ [prefix "-" negate, prefix "+" id ]
+// -- >            , [postfix "++" (+1)]
+// -- >            , [binary "*" (*) AssocLeft, binary "/" (div) AssocLeft ]
+// -- >            , [binary "+" (+) AssocLeft, binary "-" (-)   AssocLeft ]
+// -- >            ]
+// -- >
+// -- >  binary  name fun assoc = Infix (do{ reservedOp name; return fun }) assoc
+// -- >  prefix  name fun       = Prefix (do{ reservedOp name; return fun })
+// -- >  postfix name fun       = Postfix (do{ reservedOp name; return fun })
+
+// buildExpressionParser :: (Stream s m t)
+//                       => OperatorTable s u m a
+//                       -> ParsecT s u m a
+//                       -> ParsecT s u m a
+// {-# INLINABLE buildExpressionParser #-}
+// buildExpressionParser operators simpleExpr
+//     = foldl (makeParser) simpleExpr operators
+//     where
+//       makeParser term ops
+//         = let (rassoc,lassoc,nassoc
+//                ,prefix,postfix)      = foldr splitOp ([],[],[],[],[]) ops
+
+//               rassocOp   = choice rassoc
+//               lassocOp   = choice lassoc
+//               nassocOp   = choice nassoc
+//               prefixOp   = choice prefix  <?> ""
+//               postfixOp  = choice postfix <?> ""
+
+//               ambiguous assoc op= try $
+//                                   do{ _ <- op; fail ("ambiguous use of a " ++ assoc
+//                                                      ++ " associative operator")
+//                                     }
+
+//               ambiguousRight    = ambiguous "right" rassocOp
+//               ambiguousLeft     = ambiguous "left" lassocOp
+//               ambiguousNon      = ambiguous "non" nassocOp
+
+//               termP      = do{ pre  <- prefixP
+//                              ; x    <- term
+//                              ; post <- postfixP
+//                              ; return (post (pre x))
+//                              }
+
+//               postfixP   = postfixOp <|> return id
+
+//               prefixP    = prefixOp <|> return id
+
+//               rassocP x  = do{ f <- rassocOp
+//                              ; y  <- do{ z <- termP; rassocP1 z }
+//                              ; return (f x y)
+//                              }
+//                            <|> ambiguousLeft
+//                            <|> ambiguousNon
+//                            -- <|> return x
+
+//               rassocP1 x = rassocP x  <|> return x
+
+//               lassocP x  = do{ f <- lassocOp
+//                              ; y <- termP
+//                              ; lassocP1 (f x y)
+//                              }
+//                            <|> ambiguousRight
+//                            <|> ambiguousNon
+//                            -- <|> return x
+
+//               lassocP1 x = lassocP x <|> return x
+
+//               nassocP x  = do{ f <- nassocOp
+//                              ; y <- termP
+//                              ;    ambiguousRight
+//                               <|> ambiguousLeft
+//                               <|> ambiguousNon
+//                               <|> return (f x y)
+//                              }
+//                            -- <|> return x
+
+//            in  do{ x <- termP
+//                  ; rassocP x <|> lassocP  x <|> nassocP x <|> return x
+//                    <?> "operator"
+//                  }
+
+
+//       splitOp (Infix op assoc) (rassoc,lassoc,nassoc,prefix,postfix)
+//         = case assoc of
+//             AssocNone  -> (rassoc,lassoc,op:nassoc,prefix,postfix)
+//             AssocLeft  -> (rassoc,op:lassoc,nassoc,prefix,postfix)
+//             AssocRight -> (op:rassoc,lassoc,nassoc,prefix,postfix)
+
+//       splitOp (Prefix op) (rassoc,lassoc,nassoc,prefix,postfix)
+//         = (rassoc,lassoc,nassoc,op:prefix,postfix)
+
+//       splitOp (Postfix op) (rassoc,lassoc,nassoc,prefix,postfix)
+//         = (rassoc,lassoc,nassoc,prefix,op:postfix)
+buildExpressionParser(stream: Prim.Stream s t, operators: Array (Array (Operator s u a r)), simpleExpr: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
+  Array.foldl(Array.map(operators, Iter.items), simpleExpr, \(term, ops) -> makeParser(stream, term, ops))
+
+makeParser(stream: Prim.Stream s t, term: Prim.ParsecT s u a r, ops: Iter.Iter (Operator s u a r)): Prim.ParsecT s u a r =
+  let (rassoc, lassoc, nassoc, prefix, postfix) = Iter.foldr(ops, ([],[],[],[],[]), splitOp) in
+  let rassocOp = Combinator.choice(stream, rassoc) in
+  let lassocOp = Combinator.choice(stream, lassoc) in
+  let nassocOp = Combinator.choice(stream, nassoc) in
+  let prefixOp = Prim.withErr(Combinator.choice(stream, prefix), "") in
+  let postfixOp = Prim.withErr(Combinator.choice(stream, postfix), "") in
+
+  let ambiguous = \(assoc, op) -> Prim.try(Prim.parserBind(op, \_ -> Prim.parserFail(Array.concat(Array.concat("ambiguous use of a ", assoc), " associative operator")))) in
+  
+  let ambiguousRight = ambiguous("right", rassocOp) in
+  let ambiguousLeft = ambiguous("left", lassocOp) in
+  let ambiguousNon = ambiguous("non", nassocOp) in
+
+  let postfixP = Prim.tryOr(postfixOp, Prim.parserReturn(Func.id)) in
+  let prefixP = Prim.tryOr(prefixOp, Prim.parserReturn(Func.id)) in
+
+  let nassocP = \x -> Prim.parserBind(nassocOp, \f -> Prim.parserBind(termP(term, prefixP, postfixP), \y -> Prim.tryOr(ambiguousRight, Prim.tryOr(ambiguousLeft, Prim.tryOr(ambiguousNon, Prim.parserReturn(f(x, y))))))) in
+  
+  Prim.parserBind(termP(term, prefixP, postfixP), \x -> Prim.withErr(Prim.tryOr(rassocP(x, term, rassocOp, ambiguousLeft, ambiguousNon, prefixP, postfixP), Prim.tryOr(lassocP(x, term, lassocOp, ambiguousRight, ambiguousNon, prefixP, postfixP), Prim.tryOr(nassocP(x), Prim.parserReturn(x)))), "operator"))
+
+termP(term: Prim.ParsecT s u a r, prefixP: Prim.ParsecT s u (a -> a) r, postfixP: Prim.ParsecT s u (a -> a) r): Prim.ParsecT s u a r =
+  Prim.parserBind(prefixP, \pre -> Prim.parserBind(term, \x -> Prim.parserBind(postfixP, \post -> Prim.parserReturn(post(pre(x))))))
+
+lassocP(x: a, term: Prim.ParsecT s u a r, lassocOp: Prim.ParsecT s u ((a, a) -> a) r, ambiguousRight: Prim.ParsecT s u a r, ambiguousNon: Prim.ParsecT s u a r, prefixP: Prim.ParsecT s u (a -> a) r, postfixP: Prim.ParsecT s u (a -> a) r): Prim.ParsecT s u a r =
+  Prim.tryOr(Prim.parserBind(lassocOp, \f -> Prim.parserBind(termP(term, prefixP, postfixP), \y -> lassocP1(f(x, y), term, lassocOp, ambiguousRight, ambiguousNon, prefixP, postfixP))), Prim.tryOr(ambiguousRight, ambiguousNon))
+
+lassocP1(x: a, term: Prim.ParsecT s u a r, lassocOp: Prim.ParsecT s u ((a, a) -> a) r, ambiguousRight: Prim.ParsecT s u a r, ambiguousNon: Prim.ParsecT s u a r, prefixP: Prim.ParsecT s u (a -> a) r, postfixP: Prim.ParsecT s u (a -> a) r): Prim.ParsecT s u a r =
+  Prim.tryOr(lassocP(x, term, lassocOp, ambiguousRight, ambiguousNon, prefixP, postfixP), Prim.parserReturn(x))
+
+rassocP(x: a, term: Prim.ParsecT s u a r, rassocOp: Prim.ParsecT s u ((a, a) -> a) r, ambiguousLeft: Prim.ParsecT s u a r, ambiguousNon: Prim.ParsecT s u a r, prefixP: Prim.ParsecT s u (a -> a) r, postfixP: Prim.ParsecT s u (a -> a) r): Prim.ParsecT s u a r =
+  Prim.tryOr(Prim.parserBind(rassocOp, \f -> Prim.parserBind(Prim.parserBind(termP(term, prefixP, postfixP), \z -> rassocP1(z, term, rassocOp, ambiguousLeft, ambiguousNon, prefixP, postfixP)), \y -> Prim.parserReturn(f(x, y)))), Prim.tryOr(ambiguousLeft, ambiguousNon))
+
+rassocP1(x: a, term: Prim.ParsecT s u a r, rassocOp: Prim.ParsecT s u ((a, a) -> a) r, ambiguousLeft: Prim.ParsecT s u a r, ambiguousNon: Prim.ParsecT s u a r, prefixP: Prim.ParsecT s u (a -> a) r, postfixP: Prim.ParsecT s u (a -> a) r): Prim.ParsecT s u a r =
+  Prim.tryOr(rassocP(x, term, rassocOp, ambiguousLeft, ambiguousNon, prefixP, postfixP), Prim.parserReturn(x))
+
+splitOp(a: Operator s u a r, accum: (Array (Prim.ParsecT s u ((a, a) -> a) r), Array (Prim.ParsecT s u ((a, a) -> a) r), Array (Prim.ParsecT s u ((a, a) -> a) r), Array (Prim.ParsecT s u (a -> a) r), Array (Prim.ParsecT s u (a -> a) r))): (Array (Prim.ParsecT s u ((a, a) -> a) r), Array (Prim.ParsecT s u ((a, a) -> a) r), Array (Prim.ParsecT s u ((a, a) -> a) r), Array (Prim.ParsecT s u (a -> a) r), Array (Prim.ParsecT s u (a -> a) r)) =
+  let (rassoc, lassoc, nassoc, prefix, postfix) = accum in
+  match a {
+    Infix(op, assoc) -> match assoc {
+      AssocNone -> (rassoc, lassoc, Array.push_front(op, nassoc), prefix, postfix),
+      AssocLeft -> (rassoc, Array.push_front(op, lassoc), nassoc, prefix, postfix),
+      AssocRight -> (Array.push_front(op, rassoc), lassoc, nassoc, prefix, postfix)
+    },
+    Prefix(op) -> (rassoc, lassoc, nassoc, Array.push_front(op, prefix), postfix),
+    Postfix(op) -> (rassoc, lassoc, nassoc, prefix, Array.push_front(op, postfix))
+  }
