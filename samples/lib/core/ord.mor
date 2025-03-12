@@ -1,0 +1,35 @@
+import Iter
+import Option
+
+pub type Ordering {
+  pub EQ,
+  pub GT,
+  pub LT
+}
+
+pub type Ord a {
+  pub Ord((a, a) -> Ordering)
+}
+
+pub compare(ord: Ord a, x1: a, x2: a): Ordering =
+  let Ord(f) = ord in f(x1, x2)
+
+pub ordInts: Ord Int =
+  Ord(\(x1, x2) ->
+    if x1 = x2 {
+      EQ
+    } else if x1 > x2 {
+      GT
+    } else {
+      LT
+    })
+
+pub ordByte: Ord Byte =
+  Ord(\(x1, x2) ->
+    if x1 =& x2 {
+      EQ
+    } else if x1 >& x2 {
+      GT
+    } else {
+      LT
+    })
