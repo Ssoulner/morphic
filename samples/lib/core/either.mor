@@ -1,0 +1,73 @@
+import Option
+import Array
+import Iter
+
+pub type Either a b {
+  pub Left(a),
+  pub Right(b)
+}
+
+pub either(ifLeft: a -> c, ifRight: b -> c, e: Either a b): c =
+  match e {
+    Left(a) -> ifLeft(a),
+    Right(b) -> ifRight(b)
+  }
+
+pub lefts(es: Array (Either a b)): Array a = leftsI(Iter.items(es))
+
+leftsI(es: Iter.Iter (Either a b)): Array a =
+  match Iter.next(es) {
+    Option.None -> [],
+    Option.Some(e, es1) -> match e {
+      Left(a) -> Array.push_front(a, leftsI(es1)),
+      Right(_) -> leftsI(es1)
+    }
+  }
+
+pub rights(es: Array (Either a b)): Array b = rightsI(Iter.items(es))
+
+rightsI(es: Iter.Iter (Either a b)): Array b =
+  match Iter.next(es) {
+    Option.None -> [],
+    Option.Some(e, es1) -> match e {
+      Left(_) -> rightsI(es1),
+      Right(b) -> Array.push_front(b, rightsI(es1))
+    }
+  }
+
+pub is_left(e: Either a b): Bool =
+  match e {
+    Left(_) -> True,
+    Right(_) -> False
+  }
+
+pub is_right(e: Either a b): Bool =
+  match e {
+    Left(_) -> False,
+    Right(_) -> True
+  }
+
+pub from_left(default: a, e: Either a b): a =
+  match e {
+    Left(a) -> a,
+    Right(_) -> default
+  }
+
+pub from_right(default: b, e: Either a b): b =
+  match e {
+    Left(_) -> default,
+    Right(b) -> b
+  }
+
+pub partition_eithers(es: Array (Either a b)): (Array a, Array b) =
+  partition_eithersI(Iter.items(es), [], [])
+
+partition_eithersI(es: Iter.Iter (Either a b), ls: Array a, rs: Array b): (Array a, Array b) =
+  match Iter.next(es) {
+    Option.None -> (ls, rs),
+    Option.Some(e, es1) ->
+      match e {
+        Left(l) -> partition_eithersI(es1, Array.push_front(l, ls), rs),
+        Right(r) -> partition_eithersI(es1, ls, Array.push_front(r, rs))
+      }
+  }
