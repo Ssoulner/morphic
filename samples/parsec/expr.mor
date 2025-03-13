@@ -36,9 +36,9 @@ pub type Assoc {
 //                         | Postfix (ParsecT s u m (a -> a))
 //     deriving ( Typeable )
 type Operator s u a r {
-  Infix(Prim.ParsecT s u ((a, a) -> a) r, Assoc),
-  Prefix(Prim.ParsecT s u (a -> a) r),
-  Postfix(Prim.ParsecT s u (a -> a) r)
+  Infix(Prim.ParsecT ((a, a) -> a), Assoc),
+  Prefix(Prim.ParsecT (a -> a)),
+  Postfix(Prim.ParsecT (a -> a))
 }
 
 // -- | An @OperatorTable s u m a@ is a list of @Operator s u m a@
@@ -169,16 +169,16 @@ type Operator s u a r {
 
 //       splitOp (Postfix op) (rassoc,lassoc,nassoc,prefix,postfix)
 //         = (rassoc,lassoc,nassoc,prefix,op:postfix)
-buildExpressionParser(stream: Prim.Stream s t, operators: Array (Array (Operator s u a r)), simpleExpr: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
-  Array.foldl(Array.map(operators, Iter.items), simpleExpr, \(term, ops) -> makeParser(stream, term, ops))
+buildExpressionParser(operators: Array (Array (Operator s u a r)), simpleExpr: Prim.ParsecT a): Prim.ParsecT a =
+  Array.foldl(Array.map(operators, Iter.items), simpleExpr, \(term, ops) -> makeParser(term, ops))
 
-makeParser(stream: Prim.Stream s t, term: Prim.ParsecT s u a r, ops: Iter.Iter (Operator s u a r)): Prim.ParsecT s u a r =
+makeParser(term: Prim.ParsecT a, ops: Iter.Iter (Operator s u a r)): Prim.ParsecT a =
   let (rassoc, lassoc, nassoc, prefix, postfix) = Iter.foldr(ops, ([],[],[],[],[]), splitOp) in
-  let rassocOp = Combinator.choice(stream, rassoc) in
-  let lassocOp = Combinator.choice(stream, lassoc) in
-  let nassocOp = Combinator.choice(stream, nassoc) in
-  let prefixOp = Prim.withErr(Combinator.choice(stream, prefix), "") in
-  let postfixOp = Prim.withErr(Combinator.choice(stream, postfix), "") in
+  let rassocOp = Combinator.choice(rassoc) in
+  let lassocOp = Combinator.choice(lassoc) in
+  let nassocOp = Combinator.choice(nassoc) in
+  let prefixOp = Prim.withErr(Combinator.choice(prefix), "") in
+  let postfixOp = Prim.withErr(Combinator.choice(postfix), "") in
 
   let ambiguous = \(assoc, op) -> Prim.try(Prim.parserBind(op, \_ -> Prim.parserFail(Array.concat(Array.concat("ambiguous use of a ", assoc), " associative operator")))) in
   
@@ -193,22 +193,22 @@ makeParser(stream: Prim.Stream s t, term: Prim.ParsecT s u a r, ops: Iter.Iter (
   
   Prim.parserBind(termP(term, prefixP, postfixP), \x -> Prim.withErr(Prim.tryOr(rassocP(x, term, rassocOp, ambiguousLeft, ambiguousNon, prefixP, postfixP), Prim.tryOr(lassocP(x, term, lassocOp, ambiguousRight, ambiguousNon, prefixP, postfixP), Prim.tryOr(nassocP(x), Prim.parserReturn(x)))), "operator"))
 
-termP(term: Prim.ParsecT s u a r, prefixP: Prim.ParsecT s u (a -> a) r, postfixP: Prim.ParsecT s u (a -> a) r): Prim.ParsecT s u a r =
+termP(term: Prim.ParsecT a, prefixP: Prim.ParsecT (a -> a), postfixP: Prim.ParsecT (a -> a)): Prim.ParsecT a =
   Prim.parserBind(prefixP, \pre -> Prim.parserBind(term, \x -> Prim.parserBind(postfixP, \post -> Prim.parserReturn(post(pre(x))))))
 
-lassocP(x: a, term: Prim.ParsecT s u a r, lassocOp: Prim.ParsecT s u ((a, a) -> a) r, ambiguousRight: Prim.ParsecT s u a r, ambiguousNon: Prim.ParsecT s u a r, prefixP: Prim.ParsecT s u (a -> a) r, postfixP: Prim.ParsecT s u (a -> a) r): Prim.ParsecT s u a r =
+lassocP(x: a, term: Prim.ParsecT a, lassocOp: Prim.ParsecT ((a, a) -> a), ambiguousRight: Prim.ParsecT a, ambiguousNon: Prim.ParsecT a, prefixP: Prim.ParsecT (a -> a), postfixP: Prim.ParsecT (a -> a)): Prim.ParsecT a =
   Prim.tryOr(Prim.parserBind(lassocOp, \f -> Prim.parserBind(termP(term, prefixP, postfixP), \y -> lassocP1(f(x, y), term, lassocOp, ambiguousRight, ambiguousNon, prefixP, postfixP))), Prim.tryOr(ambiguousRight, ambiguousNon))
 
-lassocP1(x: a, term: Prim.ParsecT s u a r, lassocOp: Prim.ParsecT s u ((a, a) -> a) r, ambiguousRight: Prim.ParsecT s u a r, ambiguousNon: Prim.ParsecT s u a r, prefixP: Prim.ParsecT s u (a -> a) r, postfixP: Prim.ParsecT s u (a -> a) r): Prim.ParsecT s u a r =
+lassocP1(x: a, term: Prim.ParsecT a, lassocOp: Prim.ParsecT ((a, a) -> a), ambiguousRight: Prim.ParsecT a, ambiguousNon: Prim.ParsecT a, prefixP: Prim.ParsecT (a -> a), postfixP: Prim.ParsecT (a -> a)): Prim.ParsecT a =
   Prim.tryOr(lassocP(x, term, lassocOp, ambiguousRight, ambiguousNon, prefixP, postfixP), Prim.parserReturn(x))
 
-rassocP(x: a, term: Prim.ParsecT s u a r, rassocOp: Prim.ParsecT s u ((a, a) -> a) r, ambiguousLeft: Prim.ParsecT s u a r, ambiguousNon: Prim.ParsecT s u a r, prefixP: Prim.ParsecT s u (a -> a) r, postfixP: Prim.ParsecT s u (a -> a) r): Prim.ParsecT s u a r =
+rassocP(x: a, term: Prim.ParsecT a, rassocOp: Prim.ParsecT ((a, a) -> a), ambiguousLeft: Prim.ParsecT a, ambiguousNon: Prim.ParsecT a, prefixP: Prim.ParsecT (a -> a), postfixP: Prim.ParsecT (a -> a)): Prim.ParsecT a =
   Prim.tryOr(Prim.parserBind(rassocOp, \f -> Prim.parserBind(Prim.parserBind(termP(term, prefixP, postfixP), \z -> rassocP1(z, term, rassocOp, ambiguousLeft, ambiguousNon, prefixP, postfixP)), \y -> Prim.parserReturn(f(x, y)))), Prim.tryOr(ambiguousLeft, ambiguousNon))
 
-rassocP1(x: a, term: Prim.ParsecT s u a r, rassocOp: Prim.ParsecT s u ((a, a) -> a) r, ambiguousLeft: Prim.ParsecT s u a r, ambiguousNon: Prim.ParsecT s u a r, prefixP: Prim.ParsecT s u (a -> a) r, postfixP: Prim.ParsecT s u (a -> a) r): Prim.ParsecT s u a r =
+rassocP1(x: a, term: Prim.ParsecT a, rassocOp: Prim.ParsecT ((a, a) -> a), ambiguousLeft: Prim.ParsecT a, ambiguousNon: Prim.ParsecT a, prefixP: Prim.ParsecT (a -> a), postfixP: Prim.ParsecT (a -> a)): Prim.ParsecT a =
   Prim.tryOr(rassocP(x, term, rassocOp, ambiguousLeft, ambiguousNon, prefixP, postfixP), Prim.parserReturn(x))
 
-splitOp(a: Operator s u a r, accum: (Array (Prim.ParsecT s u ((a, a) -> a) r), Array (Prim.ParsecT s u ((a, a) -> a) r), Array (Prim.ParsecT s u ((a, a) -> a) r), Array (Prim.ParsecT s u (a -> a) r), Array (Prim.ParsecT s u (a -> a) r))): (Array (Prim.ParsecT s u ((a, a) -> a) r), Array (Prim.ParsecT s u ((a, a) -> a) r), Array (Prim.ParsecT s u ((a, a) -> a) r), Array (Prim.ParsecT s u (a -> a) r), Array (Prim.ParsecT s u (a -> a) r)) =
+splitOp(a: Operator s u a r, accum: (Array (Prim.ParsecT ((a, a) -> a)), Array (Prim.ParsecT ((a, a) -> a)), Array (Prim.ParsecT ((a, a) -> a)), Array (Prim.ParsecT (a -> a)), Array (Prim.ParsecT (a -> a)))): (Array (Prim.ParsecT ((a, a) -> a)), Array (Prim.ParsecT ((a, a) -> a)), Array (Prim.ParsecT ((a, a) -> a)), Array (Prim.ParsecT (a -> a)), Array (Prim.ParsecT (a -> a))) =
   let (rassoc, lassoc, nassoc, prefix, postfix) = accum in
   match a {
     Infix(op, assoc) -> match assoc {

@@ -83,8 +83,8 @@ setSourceColumn(sourcePos: SourcePos, n: Int): SourcePos =
 // updatePosString :: SourcePos -> String -> SourcePos
 // updatePosString pos string
 //     = foldl updatePosChar pos string
-pub updatePosString(sourcePos: SourcePos, txt: Array Byte): SourcePos =
-  let inp = Iter.items(txt) in Iter.foldl(inp, sourcePos, updatePosChar)
+pub updatePosString(sourcePos: SourcePos, txt: Iter.Iter Byte): SourcePos =
+  Iter.foldl(txt, sourcePos, updatePosChar)
 
 // -- | Update a source position given a character. If the character is a
 // -- newline (\'\\n\') or carriage return (\'\\r\') the line number is

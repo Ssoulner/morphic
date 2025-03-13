@@ -21,7 +21,7 @@ import Prim
 // choice :: (Stream s m t) => [ParsecT s u m a] -> ParsecT s u m a
 // {-# INLINABLE choice #-}
 // choice ps           = foldr (<|>) mzero ps
-pub choice(stream: Prim.Stream s t, ps: Array (Prim.ParsecT s u a r)): Prim.ParsecT s u a r =
+pub choice(ps: Array (Prim.ParsecT a)): Prim.ParsecT a =
   Iter.foldr(Iter.items(ps), Prim.parserZero, Prim.tryOr)
 
 // -- | @option x p@ tries to apply parser @p@. If @p@ fails without
@@ -35,7 +35,7 @@ pub choice(stream: Prim.Stream s t, ps: Array (Prim.ParsecT s u a r)): Prim.Pars
 // option :: (Stream s m t) => a -> ParsecT s u m a -> ParsecT s u m a
 // {-# INLINABLE option #-}
 // option x p          = p <|> return x
-pub option(stream: Prim.Stream s t, x: a, p: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
+pub option(x: a, p: Prim.ParsecT a): Prim.ParsecT a =
   Prim.tryOr(p, Prim.parserReturn(x))
 
 // -- | @optionMaybe p@ tries to apply parser @p@.  If @p@ fails without
@@ -45,8 +45,8 @@ pub option(stream: Prim.Stream s t, x: a, p: Prim.ParsecT s u a r): Prim.ParsecT
 // optionMaybe :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m (Maybe a)
 // {-# INLINABLE optionMaybe #-}
 // optionMaybe p       = option Nothing (liftM Just p)
-pub optionMaybe(stream: Prim.Stream s t, p: Prim.ParsecT s u a r): Prim.ParsecT s u (Option.Option a) r =
-  option(stream, Option.None, Prim.parsecMap(Option.Some, p))
+pub optionMaybe(p: Prim.ParsecT a): Prim.ParsecT (Option.Option a) =
+  option(Option.None, Prim.parsecMap(Option.Some, p))
 
 // -- | @optional p@ tries to apply parser @p@.  It will parse @p@ or nothing.
 // -- It only fails if @p@ fails after consuming input. It discards the result
@@ -55,8 +55,8 @@ pub optionMaybe(stream: Prim.Stream s t, p: Prim.ParsecT s u a r): Prim.ParsecT 
 // optional :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m ()
 // {-# INLINABLE optional #-}
 // optional p          = do{ _ <- p; return ()} <|> return ()
-pub optional(stream: Prim.Stream s t, p: Prim.ParsecT s u a r): Prim.ParsecT s u () r =
-  panic("unimplemented")
+pub optional(p: Prim.ParsecT a): Prim.ParsecT () =
+  Prim.tryOr(Prim.parserBind(p, \_ -> Prim.parserReturn(())), Prim.parserReturn(()))
 
 // -- | @between open close p@ parses @open@, followed by @p@ and @close@.
 // -- Returns the value returned by @p@.
@@ -68,8 +68,10 @@ pub optional(stream: Prim.Stream s t, p: Prim.ParsecT s u a r): Prim.ParsecT s u
 // {-# INLINABLE between #-}
 // between open close p
 //                     = do{ _ <- open; x <- p; _ <- close; return x }
-pub between(stream: Prim.Stream s t, open: Prim.ParsecT s u open r, close: Prim.ParsecT s u close r, p: Prim.ParsecT s u a r): Prim.ParsecT s u a r =
-  panic("unimplemented")
+// pub between(open: Prim.ParsecT open, close: Prim.ParsecT close, p: Prim.ParsecT a): Prim.ParsecT a =
+//   Prim.parserBind(open, \_ -> Prim.parserBind(p, \x -> Prim.parserBind(close, \_ -> Prim.parserReturn(x))))
+pub between(open: Prim.ParsecT open, close: Prim.ParsecT close, p: Prim.ParsecT a): Prim.ParsecT a =
+  Prim.parserBind(open, \_ -> Prim.parserBind(p, \x -> Prim.parserBind(close, \_ -> Prim.parserReturn(x))))
 
 // -- | @skipMany1 p@ applies the parser @p@ /one/ or more times, skipping
 // -- its result.
@@ -82,7 +84,7 @@ pub between(stream: Prim.Stream s t, open: Prim.ParsecT s u open r, close: Prim.
 //                     where
 //                       scan  = do{ p; scan } <|> return ()
 // -}
-pub skipMany1(stream: Prim.Stream s t, p: Prim.ParsecT s u a r): Prim.ParsecT s u () r =
+pub skipMany1(p: Prim.ParsecT a): Prim.ParsecT () =
   Prim.parserBind(p, \_ -> Prim.skipMany(p))
 
 // -- | @sepBy p sep@ parses /zero/ or more occurrences of @p@, separated
@@ -93,8 +95,8 @@ pub skipMany1(stream: Prim.Stream s t, p: Prim.ParsecT s u a r): Prim.ParsecT s 
 // sepBy :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m sep -> ParsecT s u m [a]
 // {-# INLINABLE sepBy #-}
 // sepBy p sep         = sepBy1 p sep <|> return []
-pub sepBy(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s u sep r): Prim.ParsecT s u (Array a) r =
-  Prim.tryOr(sepBy1(stream, p, sep), Prim.parserReturn([]))
+pub sepBy(p: Prim.ParsecT a, sep: Prim.ParsecT sep): Prim.ParsecT (Array a) =
+  Prim.tryOr(sepBy1(p, sep), Prim.parserReturn([]))
 
 // -- | @sepBy1 p sep@ parses /one/ or more occurrences of @p@, separated
 // -- by @sep@. Returns a list of values returned by @p@.
@@ -105,8 +107,9 @@ pub sepBy(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s 
 //                         ; xs <- many (sep >> p)
 //                         ; return (x:xs)
 //                         }
-pub sepBy1(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s u sep r): Prim.ParsecT s u (Array a) r =
-  Prim.parserBind(p, \x -> Prim.parserBind(Prim.many(Prim.parserBind(sep, \_ -> p)), \xs -> Prim.parserReturn(Array.push_front(x, xs))))
+pub sepBy1(p: Prim.ParsecT a, sep: Prim.ParsecT sep): Prim.ParsecT (Array a) =
+  // Prim.parserBind(p, \x -> Prim.parserBind(Prim.many(Prim.parserBind(sep, \_ -> p)), \xs -> Prim.parserReturn(Array.push_front(x, xs))))
+  Prim.parserBind(p, \x -> Prim.parserBind(Prim.many(Prim.parserBind(sep, \_ -> p)), \xs -> Prim.parserReturn(Array.push(xs, x))))
 
 
 // -- | @sepEndBy1 p sep@ parses /one/ or more occurrences of @p@,
@@ -122,8 +125,9 @@ pub sepBy1(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s
 //                             }
 //                           <|> return [x]
 //                         }
-sepEndBy1(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s u sep r): Prim.ParsecT s u (Array a) r =
-  Prim.parserBind(p, \x -> Prim.tryOr(Prim.parserBind(sep, \_ -> Prim.parserBind(sepEndBy(stream, p, sep), \xs -> Prim.parserReturn(Array.push_front(x, xs)))), Prim.parserReturn([x])))
+sepEndBy1(p: Prim.ParsecT a, sep: Prim.ParsecT sep): Prim.ParsecT (Array a) =
+  // Prim.parserBind(p, \x -> Prim.tryOr(Prim.parserBind(sep, \_ -> Prim.parserBind(sepEndBy(p, sep), \xs -> Prim.parserReturn(Array.push_front(x, xs)))), Prim.parserReturn([x])))
+  Prim.parserBind(p, \x -> Prim.tryOr(Prim.parserBind(sep, \_ -> Prim.parserBind(sepEndBy(p, sep), \xs -> Prim.parserReturn(Array.push(xs, x)))), Prim.parserReturn([x])))
 
 // -- | @sepEndBy p sep@ parses /zero/ or more occurrences of @p@,
 // -- separated and optionally ended by @sep@, ie. haskell style
@@ -134,8 +138,8 @@ sepEndBy1(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s 
 // sepEndBy :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m sep -> ParsecT s u m [a]
 // {-# INLINABLE sepEndBy #-}
 // sepEndBy p sep      = sepEndBy1 p sep <|> return []
-sepEndBy(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s u sep r): Prim.ParsecT s u (Array a) r =
-  Prim.tryOr(sepEndBy1(stream, p, sep), Prim.parserReturn([]))
+sepEndBy(p: Prim.ParsecT a, sep: Prim.ParsecT sep): Prim.ParsecT (Array a) =
+  Prim.tryOr(sepEndBy1(p, sep), Prim.parserReturn([]))
 
 
 // -- | @endBy1 p sep@ parses /one/ or more occurrences of @p@, separated
@@ -144,7 +148,7 @@ sepEndBy(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s u
 // endBy1 :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m sep -> ParsecT s u m [a]
 // {-# INLINABLE endBy1 #-}
 // endBy1 p sep        = many1 (do{ x <- p; _ <- sep; return x })
-endBy1(stream: Prim.Stream s r, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s u sep r): Prim.ParsecT s u (Array a) r =
+endBy1(p: Prim.ParsecT a, sep: Prim.ParsecT sep): Prim.ParsecT (Array a) =
   Prim.many1(Prim.parserBind(p, \x -> Prim.parserBind(sep, \_ -> Prim.parserReturn(x))))
 
 // -- | @endBy p sep@ parses /zero/ or more occurrences of @p@, separated
@@ -155,7 +159,7 @@ endBy1(stream: Prim.Stream s r, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s u s
 // endBy :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m sep -> ParsecT s u m [a]
 // {-# INLINABLE endBy #-}
 // endBy p sep         = many (do{ x <- p; _ <- sep; return x })
-endBy(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s u sep r): Prim.ParsecT s u (Array a) r =
+endBy(p: Prim.ParsecT a, sep: Prim.ParsecT sep): Prim.ParsecT (Array a) =
   Prim.many(Prim.parserBind(p, \x -> Prim.parserBind(sep, \_ -> Prim.parserReturn(x))))
 
 // -- | @count n p@ parses @n@ occurrences of @p@. If @n@ is smaller or
@@ -166,7 +170,7 @@ endBy(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, sep: Prim.ParsecT s u se
 // {-# INLINABLE count #-}
 // count n p           | n <= 0    = return []
 //                     | otherwise = sequence (replicate n p)
-count(stream: Prim.Stream s t, n: Int, p: Prim.ParsecT s u a r): Prim.ParsecT s u (Array a) r =
+count(n: Int, p: Prim.ParsecT a): Prim.ParsecT (Array a) =
   if n <= 0 {
     Prim.parserReturn([])
   } else {
@@ -182,8 +186,8 @@ count(stream: Prim.Stream s t, n: Int, p: Prim.ParsecT s u a r): Prim.ParsecT s 
 // chainr :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m (a -> a -> a) -> a -> ParsecT s u m a
 // {-# INLINABLE chainr #-}
 // chainr p op x       = chainr1 p op <|> return x
-chainr(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((a, a) -> a) r, x: a): Prim.ParsecT s u a r =
-  Prim.tryOr(chainr1(stream, p, op), Prim.parserReturn(x))
+chainr(p: Prim.ParsecT a, op: Prim.ParsecT ((a, a) -> a), x: a): Prim.ParsecT a =
+  Prim.tryOr(chainr1(p, op), Prim.parserReturn(x))
 
 // -- | @chainl p op x@ parses /zero/ or more occurrences of @p@,
 // -- separated by @op@. Returns a value obtained by a /left/ associative
@@ -194,8 +198,8 @@ chainr(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((
 // chainl :: (Stream s m t) => ParsecT s u m a -> ParsecT s u m (a -> a -> a) -> a -> ParsecT s u m a
 // {-# INLINABLE chainl #-}
 // chainl p op x       = chainl1 p op <|> return x
-chainl(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((a, a) -> a) r, x: a): Prim.ParsecT s u a r =
-  Prim.tryOr(chainl1(stream, p, op), Prim.parserReturn(x))
+chainl(p: Prim.ParsecT a, op: Prim.ParsecT ((a, a) -> a), x: a): Prim.ParsecT a =
+  Prim.tryOr(chainl1(p, op), Prim.parserReturn(x))
 
 // -- | @chainl1 p op@ parses /one/ or more occurrences of @p@,
 // -- separated by @op@ Returns a value obtained by a /left/ associative
@@ -222,10 +226,10 @@ chainl(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((
 //                                     ; rest (f x y)
 //                                     }
 //                                 <|> return x
-chainl1(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((a, a) -> a) r): Prim.ParsecT s u a r =
+chainl1(p: Prim.ParsecT a, op: Prim.ParsecT ((a, a) -> a)): Prim.ParsecT a =
   Prim.parserBind(p, \x -> chainl1Rest(p, op, x))
 
-chainl1Rest(p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((a, a) -> a) r, x: a): Prim.ParsecT s u a r =
+chainl1Rest(p: Prim.ParsecT a, op: Prim.ParsecT ((a, a) -> a), x: a): Prim.ParsecT a =
   Prim.parserBind(op, \f -> Prim.parserBind(p, \y -> chainl1Rest(p, op, f(x, y))))
 
 // -- | @chainr1 p op x@ parses /one/ or more occurrences of |p|,
@@ -244,13 +248,13 @@ chainl1Rest(p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((a, a) -> a) r, x: a)
 //                                     ; return (f x y)
 //                                     }
 //                                 <|> return x
-chainr1(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((a, a) -> a) r): Prim.ParsecT s u a r =
+chainr1(p: Prim.ParsecT a, op: Prim.ParsecT ((a, a) -> a)): Prim.ParsecT a =
   chainr1Scan(p, op)
 
-chainr1Scan(p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((a, a) -> a) r): Prim.ParsecT s u a r =
+chainr1Scan(p: Prim.ParsecT a, op: Prim.ParsecT ((a, a) -> a)): Prim.ParsecT a =
   Prim.parserBind(p, \x -> chainr1Rest(x, p, op))
 
-chainr1Rest(x: a, p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((a, a) -> a) r): Prim.ParsecT s u a r =
+chainr1Rest(x: a, p: Prim.ParsecT a, op: Prim.ParsecT ((a, a) -> a)): Prim.ParsecT a =
   Prim.tryOr(Prim.parserBind(op, \f -> Prim.parserBind(chainr1Scan(p, op), \y -> Prim.parserReturn(f(x, y)))), Prim.parserReturn(x))
 
 
@@ -263,8 +267,9 @@ chainr1Rest(x: a, p: Prim.ParsecT s u a r, op: Prim.ParsecT s u ((a, a) -> a) r)
 // anyToken :: (Stream s m t, Show t) => ParsecT s u m t
 // {-# INLINABLE anyToken #-}
 // anyToken            = tokenPrim show (\pos _tok _toks -> pos) Just
-anyToken(stream: Prim.Stream s t, show: String.Show t): Prim.ParsecT s u t r =
-  Prim.tokenPrim(stream, \t -> String.show(show, t), \(pos,_,_) -> pos, Option.Some)
+anyToken: Prim.ParsecT Byte =
+  // Prim.tokenPrim(\t -> String.show(show, t), \(pos,_,_) -> pos, Option.Some)
+  Prim.tokenPrim(\t -> [t], \(pos,_,_) -> pos, Option.Some)
 
 // -- | This parser only succeeds at the end of the input. This is not a
 // -- primitive parser but it is defined using 'notFollowedBy'.
@@ -274,8 +279,8 @@ anyToken(stream: Prim.Stream s t, show: String.Show t): Prim.ParsecT s u t r =
 // eof :: (Stream s m t, Show t) => ParsecT s u m ()
 // {-# INLINABLE eof #-}
 // eof                 = notFollowedBy anyToken <?> "end of input"
-eof(stream: Prim.Stream s t, show: String.Show t): Prim.ParsecT s u () r =
-  Prim.withErr(notFollowedBy(stream, show, anyToken(stream, show)), "end of input")
+eof: Prim.ParsecT () =
+  Prim.withErr(notFollowedBy(anyToken), "end of input")
 
 // -- | @notFollowedBy p@ only succeeds when parser @p@ fails. This parser
 // -- does not consume any input. This parser can be used to implement the
@@ -305,8 +310,8 @@ eof(stream: Prim.Stream s t, show: String.Show t): Prim.ParsecT s u () r =
 // notFollowedBy p     = try (do{ c <- try p; unexpected (show c) }
 //                            <|> return ()
 //                           )
-pub notFollowedBy(stream: Prim.Stream s t, show: String.Show a, p: Prim.ParsecT s u a r): Prim.ParsecT s u () r =
-  Prim.try(Prim.tryOr(Prim.parserBind(Prim.try(p), \c -> Prim.unexpected(String.show(show, c))), Prim.parserReturn(())))
+pub notFollowedBy(p: Prim.ParsecT Byte): Prim.ParsecT () =
+  Prim.try(Prim.tryOr(Prim.parserBind(Prim.try(p), \c -> Prim.unexpected([c])), Prim.parserReturn(())))
 
 // -- | @manyTill p end@ applies parser @p@ /zero/ or more times until
 // -- parser @end@ succeeds. Returns the list of values returned by @p@.
@@ -326,11 +331,12 @@ pub notFollowedBy(stream: Prim.Stream s t, show: String.Show a, p: Prim.ParsecT 
 //                       scan  = do{ _ <- end; return [] }
 //                             <|>
 //                               do{ x <- p; xs <- scan; return (x:xs) }
-manyTill(stream: Prim.Stream s t, p: Prim.ParsecT s u a r, end: Prim.ParsecT s u end r): Prim.ParsecT s u (Array a) r =
+manyTill(p: Prim.ParsecT a, end: Prim.ParsecT end): Prim.ParsecT (Array a) =
   manyTillScan(p, end)
 
-manyTillScan(p: Prim.ParsecT s u a r, end: Prim.ParsecT s u end r): Prim.ParsecT s u (Array a) r =
-  Prim.tryOr(Prim.parserBind(end, \_ -> Prim.parserReturn([])), Prim.parserBind(p, \x -> Prim.parserBind(manyTillScan(p, end), \xs -> Prim.parserReturn(Array.push_front(x, xs)))))
+manyTillScan(p: Prim.ParsecT a, end: Prim.ParsecT end): Prim.ParsecT (Array a) =
+  // Prim.tryOr(Prim.parserBind(end, \_ -> Prim.parserReturn([])), Prim.parserBind(p, \x -> Prim.parserBind(manyTillScan(p, end), \xs -> Prim.parserReturn(Array.push_front(x, xs)))))
+  Prim.tryOr(Prim.parserBind(end, \_ -> Prim.parserReturn([])), Prim.parserBind(p, \x -> Prim.parserBind(manyTillScan(p, end), \xs -> Prim.parserReturn(Array.push(xs, x)))))
 
 // -- | @parserTrace label@ is an impure function, implemented with "Debug.Trace" that
 // -- prints to the console the remaining parser state at the time it is invoked.
