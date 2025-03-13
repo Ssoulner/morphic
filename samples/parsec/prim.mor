@@ -12,14 +12,29 @@ import Pos
 import Error
 
 
+pub lazy(f: () -> ParsecT a): ParsecT a =
+  ParsecT(\s -> unParser(f(), s))
+
+handleCOK(a: a, s: State, err: Error.ParseError): Consumed (Reply a) =
+  Consumed(Ok(a, s, err))
+
+handleCERR(err: Error.ParseError): Consumed (Reply a) =
+  Consumed(Error(err))
+
+handleEOK(a: a, s: State, err: Error.ParseError): Consumed (Reply a) =
+  Empty(Ok(a, s, err))
+
+handleEERR(err: Error.ParseError): Consumed (Reply a) =
+  Empty(Error(err))
+
 // unknownError :: State s u -> ParseError
 // unknownError state        = newErrorUnknown (statePos state)
-unknownError(state: State s u): Error.ParseError =
+unknownError(state: State): Error.ParseError =
   Error.newErrorUnknown(statePos(state))
 
 // sysUnExpectError :: String -> SourcePos -> Reply s u a
 // sysUnExpectError msg pos  = Error (newErrorMessage (SysUnExpect msg) pos)
-sysUnExpectError(msg: Array Byte, pos: Pos.SourcePos): Reply s u a =
+sysUnExpectError(msg: Array Byte, pos: Pos.SourcePos): Reply a =
   Error(Error.newErrorMessage(Error.SysUnExpect(msg), pos))
 
 // -- | The parser @unexpected msg@ always fails with an unexpected error
@@ -34,8 +49,9 @@ sysUnExpectError(msg: Array Byte, pos: Pos.SourcePos): Reply s u a =
 // unexpected msg
 //     = ParsecT $ \s _ _ _ eerr ->
 //       eerr $ newErrorMessage (UnExpect msg) (statePos s)
-pub unexpected(msg: Array Byte): ParsecT s u a r =
-  ParsecT(\(s,_,_,_,err) -> err(Error.newErrorMessage(Error.UnExpect(msg), statePos(s))))
+pub unexpected(msg: Array Byte): ParsecT a =
+  // ParsecT(\(s,_,_,_,err) -> err(Error.newErrorMessage(Error.UnExpect(msg), statePos(s))))
+  ParsecT(\s -> handleEERR(Error.newErrorMessage(Error.UnExpect(msg), statePos(s))))
 
 // -- | ParserT monad transformer and Parser type
 
@@ -54,18 +70,26 @@ pub unexpected(msg: Array Byte): ParsecT s u a r =
 //               -> m b
 //              }
 //      deriving ( Typeable )
-pub type ParsecT s u a r {
-  ParsecT(
-    (State s u,
-    (a, State s u, Error.ParseError) -> r,
-    Error.ParseError -> r,
-    (a, State s u, Error.ParseError) -> r,
-    Error.ParseError -> r)
-      -> r)
+// pub type ParsecT a {
+//   ParsecT(
+//     (State u,
+//     (a, State u, Error.ParseError) -> (Consumed (Reply a)),
+//     Error.ParseError -> (Consumed (Reply a)),
+//     (a, State u, Error.ParseError) -> (Consumed (Reply a)),
+//     Error.ParseError -> (Consumed (Reply a)))
+//       -> (Consumed (Reply a)))
+// }
+
+pub type ParsecT a {
+  ParsecT(State -> Consumed (Reply a))
 }
 
-unParser(p: ParsecT s u a r, state: State s u, consOk: (a, State s u, Error.ParseError) -> r, consErr: Error.ParseError -> r, emptyOk: (a, State s u, Error.ParseError) -> r, emptyErr: Error.ParseError -> r): r =
-  let ParsecT(unP) = p in unP(state, consOk, consErr, emptyOk, emptyErr)
+// unParser(p: ParsecT a, state: State u, consOk: (a, State u, Error.ParseError) -> r, consErr: Error.ParseError -> r, emptyOk: (a, State u, Error.ParseError) -> r, emptyErr: Error.ParseError -> r): r =
+//   let ParsecT(unP) = p in unP(state, consOk, consErr, emptyOk, emptyErr)
+// unParser(p: ParsecT a, state: State u, consOk: (a, State u, Error.ParseError) -> (Consumed (Reply a)), consErr: Error.ParseError -> (Consumed (Reply a)), emptyOk: (a, State u, Error.ParseError) -> (Consumed (Reply a)), emptyErr: Error.ParseError -> (Consumed (Reply a))): (Consumed (Reply a)) =
+  // let ParsecT(unP) = p in unP(state, consOk, consErr, emptyOk, emptyErr)
+unParser(p: ParsecT a, state: State): (Consumed (Reply a)) =
+  let ParsecT(unP) = p in unP(state)
 
 // -- | Low-level unpacking of the ParsecT type. To run your parser, please look to
 // -- runPT, runP, runParserT, runParser and other such functions.
@@ -76,12 +100,18 @@ unParser(p: ParsecT s u a r, state: State s u, consOk: (a, State s u, Error.Pars
 //           cerr err = return . Consumed . return $ Error err
 //           eok a s' err = return . Empty . return $ Ok a s' err
 //           eerr err = return . Empty . return $ Error err
-runParsecT(p: ParsecT s u a (Consumed (Reply s u a)), s: State s u): Consumed (Reply s u a) =
+// runParsecT(p: ParsecT a, s: State u): Consumed (Reply a) =
+//   let cok = \(a, s1, err) -> Consumed(Ok(a, s1, err)) in
+//   let cerr = \err -> Consumed(Error(err)) in
+//   let eok = \(a, s1, err) -> Empty(Ok(a, s1, err)) in
+//   let eerr = \err -> Empty(Error(err)) in
+//   unParser(p, s, cok, cerr, eok, eerr)
+runParsecT(p: ParsecT a, s: State): Consumed (Reply a) =
   let cok = \(a, s1, err) -> Consumed(Ok(a, s1, err)) in
   let cerr = \err -> Consumed(Error(err)) in
   let eok = \(a, s1, err) -> Empty(Ok(a, s1, err)) in
   let eerr = \err -> Empty(Error(err)) in
-  unParser(p, s, cok, cerr, eok, eerr)
+  unParser(p, s)
 
 // -- | Low-level creation of the ParsecT type. You really shouldn't have to do this.
 // mkPT :: Monad m => (State s u -> m (Consumed (m (Reply s u a)))) -> ParsecT s u m a
@@ -99,15 +129,25 @@ runParsecT(p: ParsecT s u a (Consumed (Reply s u a)), s: State s u): Consumed (R
 //                        case rep of
 //                          Ok x s' err -> eok x s' err
 //                          Error err -> eerr err
-mkPT(k: State s u -> Consumed (Reply s u a)): ParsecT s u a (Consumed (Reply s u a)) =
-  ParsecT(\(s, cok, cerr, eok, eerr) -> match k(s) {
+mkPT(k: State -> Consumed (Reply a)): ParsecT a =
+  // ParsecT(\(s, cok, cerr, eok, eerr) -> match k(s) {
+  //   Consumed(rep) -> match rep {
+  //       Ok(x, s1, err) -> cok(x, s1, err),
+  //       Error(err) -> cerr(err)
+  //   },
+  //   Empty(rep) -> match rep {
+  //     Ok(x, s1, err) -> eok(x, s1, err),
+  //     Error(err) -> eerr(err)
+  //   }
+  // })
+  ParsecT(\s -> match k(s) {
     Consumed(rep) -> match rep {
-        Ok(x, s1, err) -> eok(x, s1, err),
-        Error(err) -> eerr(err)
+        Ok(x, s1, err) -> handleCOK(x, s1, err),
+        Error(err) -> handleCERR(err)
     },
     Empty(rep) -> match rep {
-      Ok(x, s1, err) -> eok(x, s1, err),
-      Error(err) -> eerr(err)
+      Ok(x, s1, err) -> handleEOK(x, s1, err),
+      Error(err) -> handleEERR(err)
     }
   })
 
@@ -116,7 +156,7 @@ mkPT(k: State s u -> Consumed (Reply s u a)): ParsecT s u a (Consumed (Reply s u
 // data Consumed a  = Consumed a
 //                  | Empty !a
 //     deriving ( Typeable )
-pub type Consumed a {
+type Consumed a {
   Consumed(a),
   Empty(a)
 }
@@ -124,9 +164,9 @@ pub type Consumed a {
 // data Reply s u a = Ok a !(State s u) ParseError
 //                  | Error ParseError
 //     deriving ( Typeable )
-pub type Reply s u a {
-  pub Ok(a, State s u, Error.ParseError),
-  pub Error(Error.ParseError)
+type Reply a {
+  Ok(a, State, Error.ParseError),
+  Error(Error.ParseError)
 }
 
 // data State s u = State {
@@ -135,17 +175,20 @@ pub type Reply s u a {
 //       stateUser  :: !u
 //     }
 //     deriving ( Typeable )
-pub type State s u {
-  pub State(s, Pos.SourcePos, u)
+// pub type State s u {
+//   pub State(s, Pos.SourcePos, u)
+// }
+type State {
+  State(Iter.Iter Byte, Pos.SourcePos, Int)
 }
 
-stateInput(state: State s u): s =
+stateInput(state: State): Iter.Iter Byte =
   let State(s,_,_) = state in s
 
-statePos(state: State s u): Pos.SourcePos =
+statePos(state: State): Pos.SourcePos =
   let State(_,pos,_) = state in pos
 
-stateUser(state: State s u): u =
+stateUser(state: State): Int =
   let State(_,_,u) = state in u
 
 
@@ -206,8 +249,14 @@ stateUser(state: State s u): u =
 // parsecMap f p
 //     = ParsecT $ \s cok cerr eok eerr ->
 //       unParser p s (cok . f) cerr (eok . f) eerr
-pub parsecMap(f: a -> b, p: ParsecT s u a r): ParsecT s u b r =
-  ParsecT(\(s, cok, cerr, eok, eerr) -> unParser(p, s, \(a, s1, e) -> cok(f(a), s1, e), cerr, \(a, s1, e) -> eok(f(a), s1, e), eerr))
+pub parsecMap(f: a -> b, p: ParsecT a): ParsecT b =
+  // ParsecT(\(s, cok, cerr, eok, eerr) -> unParser(p, s, \(a, s1, e) -> cok(f(a), s1, e), cerr, \(a, s1, e) -> eok(f(a), s1, e), eerr))
+  ParsecT(\s -> match unParser(p, s) {
+    Consumed(Ok(a, s1, err)) -> Consumed(Ok(f(a), s1, err)),
+    Consumed(Error(err)) -> Consumed(Error(err)),
+    Empty(Ok(a, s1, err)) -> Empty(Ok(f(a), s1, err)),
+    Empty(Error(err)) -> Empty(Error(err)),
+  })
 
 // instance Applicative.Applicative (ParsecT s u m) where
 //     pure = parserReturn
@@ -267,8 +316,9 @@ pub parsecMap(f: a -> b, p: ParsecT s u a r): ParsecT s u b r =
 // parserReturn x
 //     = ParsecT $ \s _ _ eok _ ->
 //       eok x s (unknownError s)
-pub parserReturn(x: a): ParsecT s u a r =
-  ParsecT(\(s,_,_,eok,_) -> eok(x, s, unknownError(s)))
+pub parserReturn(x: a): ParsecT a =
+  // ParsecT(\(s,_,_,eok,_) -> eok(x, s, unknownError(s)))
+  ParsecT(\s -> handleEOK(x, s, unknownError(s)))
 
 // parserBind :: ParsecT s u m a -> (a -> ParsecT s u m b) -> ParsecT s u m b
 // {-# INLINE parserBind #-}
@@ -312,32 +362,63 @@ pub parserReturn(x: a): ParsecT s u a r =
 //         meerr = eerr
 //
 //     in unParser m s mcok mcerr meok meerr
-pub parserBind(m: ParsecT s u a r, k: a -> ParsecT s u b r): ParsecT s u b r =
-  ParsecT(\(s, cok, cerr, eok, eerr) ->
-    let mcok = \(x, s1, err) -> if Error.errorIsUnknown(err) {
-      unParser(k(x), s1, cok, cerr, cok, cerr)
+// pub parserBind(m: ParsecT a, k: a -> ParsecT b): ParsecT b =
+//   ParsecT(\(s, cok, cerr, eok, eerr) ->
+//     let mcok = \(x, s1, err) -> if Error.errorIsUnknown(err) {
+//       unParser(k(x), s1, cok, cerr, cok, cerr)
+//     } else {
+//       let peok = \(x1, s2, err1) -> cok(x1, s2, Error.mergeError(err, err1)) in
+//       let peerr = \err1 -> cerr(Error.mergeError(err, err1)) in
+//       unParser(k(x), s1, cok, cerr, peok, peerr)
+//     } in
+//     let meok = \(x, s1, err) -> if Error.errorIsUnknown(err) {
+//       unParser(k(x), s1, cok, cerr, eok, eerr)
+//     } else {
+//       let peok = \(x1, s2, err1) -> eok(x1, s2, Error.mergeError(err, err1)) in
+//       let peerr = \err1 -> eerr(Error.mergeError(err, err1)) in
+//       unParser(k(x), s1, cok, cerr, peok, peerr)
+//     } in
+//     unParser(m, s, mcok, cerr, meok, eerr)
+//     )
+pub parserBind(m: ParsecT a, k: a -> ParsecT b): ParsecT b =
+  ParsecT(\s -> match unParser(m, s) {
+    Consumed(Ok(a, s1, err))-> if Error.errorIsUnknown(err) {
+      match unParser(k(a), s1) {
+        Consumed(Ok(a1, s2, err1)) -> Consumed(Ok(a1, s2, err1)),
+        Consumed(Error(err1)) -> Consumed(Error(err1)),
+        Empty(Ok(a1, s2, err1)) -> Consumed(Ok(a1, s2, err1)),
+        Empty(Error(err1)) -> Consumed(Error(err1))
+      }
     } else {
-      let peok = \(x1, s2, err1) -> cok(x1, s2, Error.mergeError(err, err1)) in
-      let peerr = \err1 -> cerr(Error.mergeError(err, err1)) in
-      unParser(k(x), s1, cok, cerr, peok, peerr)
-    } in
-    let meok = \(x, s1, err) -> if Error.errorIsUnknown(err) {
-      unParser(k(x), s1, cok, cerr, eok, eerr)
+      match unParser(k(a), s1) {
+        Consumed(Ok(a1, s2, err1)) -> Consumed(Ok(a1, s2, err1)),
+        Consumed(Error(err1)) -> Consumed(Error(err1)),
+        Empty(Ok(a1, s2, err1)) -> Consumed(Ok(a1, s2, Error.mergeError(err, err1))),
+        Empty(Error(err1)) -> Consumed(Error(Error.mergeError(err, err1)))
+      }
+    },
+    Consumed(Error(err)) -> Consumed(Error(err)),
+    Empty(Ok(a, s1, err)) -> if Error.errorIsUnknown(err) {
+      unParser(k(a), s1)
     } else {
-      let peok = \(x1, s2, err1) -> eok(x1, s2, Error.mergeError(err, err1)) in
-      let peerr = \err1 -> eerr(Error.mergeError(err, err1)) in
-      unParser(k(x), s1, cok, cerr, peok, peerr)
-    } in
-    unParser(m, s, mcok, cerr, meok, eerr)
-    )
+      match unParser(k(a), s1) {
+        Consumed(Ok(a1, s2, err1)) -> Consumed(Ok(a1, s2, err1)),
+        Consumed(Error(err1)) -> Consumed(Error(err1)),
+        Empty(Ok(a1, s2, err1)) -> Empty(Ok(a1, s2, Error.mergeError(err, err1))),
+        Empty(Error(err1)) -> Empty(Error(Error.mergeError(err, err1)))
+      }
+    },
+    Empty(Error(err)) -> Empty(Error(err))
+  })
 
-pub parserSequence(ps: Array (ParsecT s u a r)): ParsecT s u (Array a) r =
+pub parserSequence(ps: Array (ParsecT a)): ParsecT (Array a) =
   parserSequenceI(Iter.items(ps))
 
-parserSequenceI(ps: Iter.Iter (ParsecT s u a r)): ParsecT s u (Array a) r =
+parserSequenceI(ps: Iter.Iter (ParsecT a)): ParsecT (Array a) =
   match Iter.next(ps) {
     Option.None -> parserReturn([]),
-    Option.Some(p, ps1) -> parserBind(p, \x -> parsecMap(\xs1 -> Array.push_front(x, xs1), parserSequenceI(ps1)))
+    // Option.Some(p, ps1) -> parserBind(p, \x -> parsecMap(\xs1 -> Array.push_front(x, xs1), parserSequenceI(ps1)))
+    Option.Some(p, ps1) -> parserBind(p, \x -> parsecMap(\xs1 -> Array.push(xs1, x), parserSequenceI(ps1)))
   }
 
 
@@ -347,7 +428,7 @@ parserSequenceI(ps: Iter.Iter (ParsecT s u a r)): ParsecT s u (Array a) r =
 //     = case reply of
 //         Ok x state err2 -> Ok x state (mergeError err1 err2)
 //         Error err2      -> Error (mergeError err1 err2)
-mergeErrorReply(err1: Error.ParseError, reply: Reply s u a): Reply s u a =
+mergeErrorReply(err1: Error.ParseError, reply: Reply a): Reply a =
   match reply {
     Ok(x, state, err2) -> Ok(x, state, Error.mergeError(err1, err2)),
     Error(err2) -> Error(Error.mergeError(err1, err2))
@@ -357,8 +438,9 @@ mergeErrorReply(err1: Error.ParseError, reply: Reply s u a): Reply s u a =
 // parserFail msg
 //     = ParsecT $ \s _ _ _ eerr ->
 //       eerr $ newErrorMessage (Message msg) (statePos s)
-pub parserFail(msg: Array Byte): ParsecT s u a r =
-  ParsecT(\(s,_,_,_,eerr) -> eerr(Error.newErrorMessage(Error.Message(msg), statePos(s))))
+pub parserFail(msg: Array Byte): ParsecT a =
+  // ParsecT(\(s,_,_,_,eerr) -> eerr(Error.newErrorMessage(Error.Message(msg), statePos(s))))
+  ParsecT(\s -> handleEERR(Error.newErrorMessage(Error.Message(msg), statePos(s))))
 
 // instance MonadPlus (ParsecT s u m) where
 //     mzero = parserZero
@@ -372,8 +454,9 @@ pub parserFail(msg: Array Byte): ParsecT s u a r =
 // parserZero
 //     = ParsecT $ \s _ _ _ eerr ->
 //       eerr $ unknownError s
-pub parserZero: ParsecT s u a r =
-  ParsecT(\(s,_,_,_,eerr) -> eerr(unknownError(s)))
+pub parserZero: ParsecT a =
+  // ParsecT(\(s,_,_,_,eerr) -> eerr(unknownError(s)))
+  ParsecT(\s -> handleEERR(unknownError(s)))
 
 // parserPlus :: ParsecT s u m a -> ParsecT s u m a -> ParsecT s u m a
 // {-# INLINE parserPlus #-}
@@ -386,13 +469,24 @@ pub parserZero: ParsecT s u a r =
 //                   neerr err' = eerr $ mergeError err err'
 //               in unParser n s cok cerr neok neerr
 //       in unParser m s cok cerr eok meerr
-parserPlus(m: ParsecT s u a r, n: ParsecT s u a r): ParsecT s u a r =
-  ParsecT(\(s, cok, cerr, eok, eerr) ->
-    let meerr = \err ->
-      let neok = \(y, s1, err1) -> eok(y, s1, Error.mergeError(err, err1)) in
-      let neerr = \err1 -> eerr(Error.mergeError(err, err1)) in
-      unParser(n, s, cok, cerr, neok, neerr) in
-    unParser(m, s, cok, cerr, eok, meerr))
+parserPlus(m: ParsecT a, n: ParsecT a): ParsecT a =
+  // ParsecT(\(s, cok, cerr, eok, eerr) ->
+  //   let meerr = \err ->
+  //     let neok = \(y, s1, err1) -> eok(y, s1, Error.mergeError(err, err1)) in
+  //     let neerr = \err1 -> eerr(Error.mergeError(err, err1)) in
+  //     unParser(n, s, cok, cerr, neok, neerr) in
+  //   unParser(m, s, cok, cerr, eok, meerr))
+  ParsecT(\s -> match unParser(m, s) {
+    Consumed(Ok(a, s1, err)) -> Consumed(Ok(a, s1, err)),
+    Consumed(Error(err)) -> Consumed(Error(err)),
+    Empty(Ok(a, s1, err)) -> Empty(Ok(a, s1, err)),
+    Empty(Error(err)) -> match unParser(n, s) {
+      Consumed(Ok(a, s1, err1)) -> Consumed(Ok(a, s1, err1)),
+      Consumed(Error(err1)) -> Consumed(Error(err1)),
+      Empty(Ok(a, s1, err1)) -> Empty(Ok(a, s1, Error.mergeError(err, err1))),
+      Empty(Error(err1)) -> Empty(Error(Error.mergeError(err, err1)))
+    }
+  })
 
 // instance MonadTrans (ParsecT s u) where
 //     lift amb = ParsecT $ \s _ _ eok _ -> do
@@ -416,7 +510,7 @@ parserPlus(m: ParsecT s u a r, n: ParsecT s u a r): ParsecT s u a r =
 
 // (<?>) :: (ParsecT s u m a) -> String -> (ParsecT s u m a)
 // p <?> msg = label p msg
-pub withErr(p: ParsecT s u a r, msg: Array Byte): ParsecT s u a r =
+pub withErr(p: ParsecT a, msg: Array Byte): ParsecT a =
   label(p, msg)
 
 // -- | This combinator implements choice. The parser @p \<|> q@ first
@@ -433,14 +527,14 @@ pub withErr(p: ParsecT s u a r, msg: Array Byte): ParsecT s u a r =
 
 // (<|>) :: (ParsecT s u m a) -> (ParsecT s u m a) -> (ParsecT s u m a)
 // p1 <|> p2 = mplus p1 p2
-pub tryOr(p1: ParsecT s u a r, p2: ParsecT s u a r): ParsecT s u a r =
+pub tryOr(p1: ParsecT a, p2: ParsecT a): ParsecT a =
   parserPlus(p1, p2)
 
 // -- | A synonym for @\<?>@, but as a function instead of an operator.
 // label :: ParsecT s u m a -> String -> ParsecT s u m a
 // label p msg
 //   = labels p [msg]
-label(p: ParsecT s u a r, msg: Array Byte): ParsecT s u a r =
+label(p: ParsecT a, msg: Array Byte): ParsecT a =
   labels(p, [msg])
 
 // labels :: ParsecT s u m a -> [String] -> ParsecT s u m a
@@ -459,7 +553,27 @@ label(p: ParsecT s u a r, msg: Array Byte): ParsecT s u a r =
 //    setExpectErrors err (msg:msgs)
 //        = foldr (\msg' err' -> addErrorMessage (Expect msg') err')
 //          (setErrorMessage (Expect msg) err) msgs
-labels(p: ParsecT s u a r, msgs: Array (Array Byte)): ParsecT s u a r =
+labels(p: ParsecT a, msgs: Array (Array Byte)): ParsecT a =
+  // let setExpectErrors = \(err, msgs1) ->
+  //   let msgsI = Iter.items(msgs1) in
+  //   match Iter.next(msgsI) {
+  //     Option.None -> Error.setErrorMessage(Error.Expect([]), err),
+  //     Option.Some(msg, msgsI1) -> if Iter.count(msgsI1) = 0 {
+  //       Error.setErrorMessage(Error.Expect(msg), err)
+  //     } else {
+  //       Iter.foldr(msgsI1, Error.setErrorMessage(Error.Expect(msg), err), \(msg1, err1) -> Error.addErrorMessage(Error.Expect(msg1), err1))
+  //     }
+  //   } in
+  // ParsecT(\(s, cok, cerr, eok, eerr) ->
+  //   let eok1 = \(x, s1, err) ->
+  //     let errRes = if Error.errorIsUnknown(err) {
+  //       err
+  //     } else {
+  //       setExpectErrors(err, msgs)
+  //     } in
+  //     eok(x, s1, errRes) in
+  //   let eerr1 = \err -> eerr(setExpectErrors(err, msgs)) in
+  //   unParser(p, s, cok, cerr, eok1, eerr1))
   let setExpectErrors = \(err, msgs1) ->
     let msgsI = Iter.items(msgs1) in
     match Iter.next(msgsI) {
@@ -470,16 +584,16 @@ labels(p: ParsecT s u a r, msgs: Array (Array Byte)): ParsecT s u a r =
         Iter.foldr(msgsI1, Error.setErrorMessage(Error.Expect(msg), err), \(msg1, err1) -> Error.addErrorMessage(Error.Expect(msg1), err1))
       }
     } in
-  ParsecT(\(s, cok, cerr, eok, eerr) ->
-    let eok1 = \(x, s1, err) ->
-      let errRes = if Error.errorIsUnknown(err) {
-        err
-      } else {
-        setExpectErrors(err, msgs)
-      } in
-      eok(x, s1, errRes) in
-    let eerr1 = \err -> eerr(setExpectErrors(err, msgs)) in
-    unParser(p, s, cok, cerr, eok1, eerr1))
+  ParsecT(\s -> match unParser(p, s) {
+    Consumed(Ok(a, s1, err)) -> Consumed(Ok(a, s1, err)),
+    Consumed(Error(err)) -> Consumed(Error(err)),
+    Empty(Ok(a, s1, err)) -> if Error.errorIsUnknown(err) {
+      Empty(Ok(a, s1, err))
+    } else {
+      Empty(Ok(a, s1, setExpectErrors(err, msgs)))
+    },
+    Empty(Error(err)) -> Empty(Error(setExpectErrors(err, msgs)))
+  })
 
 // -- TODO: There should be a stronger statement that can be made about this
 
@@ -552,55 +666,68 @@ labels(p: ParsecT s u a r, msgs: Array (Array Byte)): ParsecT s u a r =
 //                 | tok == x  -> walk toks xs
 //                 | otherwise -> eerr $ errExpect x
 
-pub tokens(stream: Stream s t, eqT: (t, t) -> Bool, showTokens: Array t -> Array Byte, nextposs: (Pos.SourcePos, Array t) -> Pos.SourcePos, tts: Array t): ParsecT s u (Array t) r =
-  let ttsI = Iter.items(tts) in
-  match Iter.next(ttsI) {
-    Option.None -> ParsecT(\(s,_,_,eok,_) -> eok([], s, unknownError(s))),
+// pub tokens(stream: Stream s t, eqT: (t, t) -> Bool, showTokens: Array t -> Array Byte, nextposs: (Pos.SourcePos, Array t) -> Pos.SourcePos, tts: Array t): ParsecT s u (Array t) r =
+pub tokens(eqT: (Byte, Byte) -> Bool, showTokens: Iter.Iter Byte -> Array Byte, nextposs: (Pos.SourcePos, Iter.Iter Byte) -> Pos.SourcePos, tts: Iter.Iter Byte): ParsecT (Array Byte) =
+  // match Iter.next(tts) {
+  //   Option.None -> ParsecT(\(s,_,_,eok,_) -> eok([], s, unknownError(s))),
+  //   Option.Some(tok, toks) ->
+  //     ParsecT(\(state, cok, cerr, _, eerr) ->
+  //       let State(input, pos, u) = state in
+  //       let errEof = Error.setErrorMessage(Error.Expect(showTokens(tts)), Error.newErrorMessage(Error.SysUnExpect(""), pos)) in
+  //       let errExpect = \x -> Error.setErrorMessage(Error.Expect(showTokens(tts)), Error.newErrorMessage(Error.SysUnExpect([x]), pos)) in
+  //       match uncons(input) {
+  //         Option.None -> eerr(errEof),
+  //         Option.Some(x, xs) -> if eqT(tok, x) {
+  //           walk(eqT, toks, xs, u, tts, pos, nextposs, errEof, cok, cerr, errExpect)
+  //         } else {
+  //           eerr(errExpect(x))
+  //         }
+  //       })
+  // }
+  match Iter.next(tts) {
+    Option.None -> ParsecT(\s -> handleEOK([], s, unknownError(s))),
     Option.Some(tok, toks) ->
-      ParsecT(\(state, cok, cerr, _, eerr) ->
-        let State(input, pos, u) = state in
+      ParsecT(\s ->
+        let State(input, pos, u) = s in
         let errEof = Error.setErrorMessage(Error.Expect(showTokens(tts)), Error.newErrorMessage(Error.SysUnExpect(""), pos)) in
-        let errExpect = \x -> Error.setErrorMessage(Error.Expect(showTokens(tts)), Error.newErrorMessage(Error.SysUnExpect(showTokens([x])), pos)) in
-        match uncons(stream, input) {
-          Option.None -> eerr(errEof),
+        let errExpect = \x -> Error.setErrorMessage(Error.Expect(showTokens(tts)), Error.newErrorMessage(Error.SysUnExpect([x]), pos)) in
+        match uncons(input) {
+          Option.None -> handleEERR(errEof),
           Option.Some(x, xs) -> if eqT(tok, x) {
-            walk(stream, eqT, toks, xs, u, tts, pos, nextposs, errEof, cok, cerr, errExpect)
+            walk(toks, xs, u, tts, pos, nextposs, errEof, errExpect)
           } else {
-            eerr(errExpect(x))
+            handleEERR(errExpect(x))
           }
         })
   }
 
-walk(stream: Stream s t, eqT: (t, t) -> Bool, ts1: Iter.Iter t, rs: s, u: u, tts: Array t, pos: Pos.SourcePos, nextposs: (Pos.SourcePos, Array t) -> Pos.SourcePos, errEof: Error.ParseError, cok: (Array t, State s u, Error.ParseError) -> r, cerr: Error.ParseError -> r, errExpect: t -> Error.ParseError): r =
+walk(ts1: Iter.Iter Byte, rs: Iter.Iter Byte, u: Int, tts: Iter.Iter Byte, pos: Pos.SourcePos, nextposs: (Pos.SourcePos, Iter.Iter Byte) -> Pos.SourcePos, errEof: Error.ParseError, errExpect: Byte -> Error.ParseError): Consumed (Reply (Array Byte)) =
   let ok = \rs1 ->
     let pos1 = nextposs(pos, tts) in
     let s1 = State(rs, pos1, u) in
-    cok(tts, s1, Error.newErrorUnknown(pos1)) in
+    handleCOK(Array.from_iter(tts), s1, Error.newErrorUnknown(pos1)) in
   match Iter.next(ts1) {
     Option.None -> ok(rs),
-    Option.Some(t, ts) -> match uncons(stream, rs) {
-      Option.None -> cerr(errEof),
-      Option.Some(x, xs) -> if eqT(t, x) {
-        walk(stream, eqT, ts, xs, u, tts, pos, nextposs, errEof, cok, cerr, errExpect)
+    Option.Some(t, ts) -> match uncons(rs) {
+      Option.None -> handleCERR(errEof),
+      Option.Some(x, xs) -> if t =& x {
+        walk(ts, xs, u, tts, pos, nextposs, errEof, errExpect)
       } else {
-        cerr(errExpect(x))
+        handleCERR(errExpect(x))
       }
     }
   }
 
-pub type Stream s t {
-  pub Stream(s -> Option.Option (t, s))
-}
+// pub type Stream s t {
+//   pub Stream(s -> Option.Option (t, s))
+// }
 
-// uncons(s: Array s): Option.Option (s, Array s) =
-//   match Iter.next(Iter.items(s)) {
-//     Option.None -> Option.None,
-//     Option.Some(s1, ss) -> Option.Some(s1, Array.from_iter(ss))
-//   }
 
-uncons(stream: Stream s t, s: s): Option.Option (t, s) =
-  let Stream(f) = stream in
-  f(s)
+
+uncons(cs: Iter.Iter Byte): Option.Option (Byte, Iter.Iter Byte) = Iter.next(cs)
+// uncons(stream: Stream s t, s: s): Option.Option (t, s) =
+//   let Stream(f) = stream in
+//   f(s)
 
 // -- | Like 'tokens', but doesn't consume matching prefix.
 // --
@@ -641,21 +768,20 @@ uncons(stream: Stream s t, s: s): Option.Option (t, s) =
 //             Just (x,xs)
 //                 | tok == x  -> walk toks xs
 //                 | otherwise -> eerr $ errExpect x
-pub tokens1(stream: Stream s t, eqT: (t, t) -> Bool, showTokens: Array t -> Array Byte, nextposs: (Pos.SourcePos, Array t) -> Pos.SourcePos, tts: Array t): ParsecT s u (Array t) r =
-  let ttsI = Iter.items(tts) in
-  match Iter.next(ttsI) {
-    Option.None -> ParsecT(\(s,_,_,eok,_) -> eok([], s, unknownError(s))),
+pub tokens1(showTokens: Iter.Iter Byte -> Array Byte, nextposs: (Pos.SourcePos, Iter.Iter Byte) -> Pos.SourcePos, tts: Iter.Iter Byte): ParsecT (Array Byte) =
+  match Iter.next(tts) {
+    Option.None -> ParsecT(\s -> handleEOK([], s, unknownError(s))),
     Option.Some(tok, toks) ->
-      ParsecT(\(state, cok, _, _, eerr) ->
-        let State(input, pos, u) = state in
+      ParsecT(\s ->
+        let State(input, pos, u) = s in
         let errEof = Error.setErrorMessage(Error.Expect(showTokens(tts)), Error.newErrorMessage(Error.SysUnExpect(""), pos)) in
-        let errExpect = \x -> Error.setErrorMessage(Error.Expect(showTokens(tts)), Error.newErrorMessage(Error.SysUnExpect(showTokens([x])), pos)) in
-        match uncons(stream, input) {
-          Option.None -> eerr(errEof),
-          Option.Some(x, xs) -> if eqT(tok, x) {
-            walk(stream, eqT, toks, xs, u, tts, pos, nextposs, errEof, cok, eerr, errExpect)
+        let errExpect = \x -> Error.setErrorMessage(Error.Expect(showTokens(tts)), Error.newErrorMessage(Error.SysUnExpect([x]), pos)) in
+        match uncons(input) {
+          Option.None -> handleEERR(errEof),
+          Option.Some(x, xs) -> if tok =& x {
+            walk(toks, xs, u, tts, pos, nextposs, errEof, errExpect)
           } else {
-            eerr(errExpect(x))
+            handleEERR(errExpect(x))
           }
         })
     }
@@ -695,8 +821,14 @@ pub tokens1(stream: Stream s t, eqT: (t, t) -> Bool, showTokens: Array t -> Arra
 // try p =
 //     ParsecT $ \s cok _ eok eerr ->
 //     unParser p s cok eerr eok eerr
-pub try(p: ParsecT s u a r): ParsecT s u a r =
-  ParsecT(\(s, cok, _, eok, eerr) -> unParser(p, s, cok, eerr, eok, eerr))
+pub try(p: ParsecT a): ParsecT a =
+  // ParsecT(\(s, cok, _, eok, eerr) -> unParser(p, s, cok, eerr, eok, eerr))
+  ParsecT(\s -> match unParser(p, s) {
+    Consumed(Ok(a, s1, err)) -> Consumed(Ok(a, s1, err)),
+    Consumed(Error(err)) -> Empty(Error(err)),
+    Empty(Ok(a, s1, err)) -> Empty(Ok(a, s1, err)),
+    Empty(Error(err)) -> Empty(Error(err))
+  })
 
 // -- | @lookAhead p@ parses @p@ without consuming any input.
 // --
@@ -708,10 +840,16 @@ pub try(p: ParsecT s u a r): ParsecT s u a r =
 //     ParsecT $ \s _ cerr eok eerr -> do
 //         let eok' a _ _ = eok a s (newErrorUnknown (statePos s))
 //         unParser p s eok' cerr eok' eerr
-lookAhead(p: ParsecT s u a r): ParsecT s u a r =
-  ParsecT(\(s, _, cerr, eok, eerr) ->
-    let eok1 = \(a, _, _) -> eok(a, s, Error.newErrorUnknown(statePos(s))) in
-    unParser(p, s, eok1, cerr, eok1, eerr))
+lookAhead(p: ParsecT a): ParsecT a =
+  // ParsecT(\(s, _, cerr, eok, eerr) ->
+  //   let eok1 = \(a, _, _) -> eok(a, s, Error.newErrorUnknown(statePos(s))) in
+  //   unParser(p, s, eok1, cerr, eok1, eerr))
+  ParsecT(\s -> match unParser(p, s) {
+    Consumed(Ok(a, s1, err)) -> Empty(Ok(a, s, Error.newErrorUnknown(statePos(s)))),
+    Consumed(Error(err)) -> Consumed(Error(err)),
+    Empty(Ok(a, s1, err)) -> Empty(Ok(a, s, Error.newErrorUnknown(statePos(s)))),
+    Empty(Error(err)) -> Empty(Error(err))
+  })
 
 // -- | The parser @token showTok posFromTok testTok@ accepts a token @t@
 // -- with result @x@ when the function @testTok t@ returns @'Just' x@. The
@@ -741,12 +879,12 @@ lookAhead(p: ParsecT s u a r): ParsecT s u a r =
 //         nextpos _ tok ts = case runIdentity (uncons ts) of
 //                              Nothing -> tokpos tok
 //                              Just (tok',_) -> tokpos tok'
-token(stream: Stream s t, showToken: t -> Array Byte, tokpos: t -> Pos.SourcePos, test: t -> Option.Option a): ParsecT s u a r =
-  let nextpos = \(_,tok, ts) -> match uncons(stream, ts) {
+token(showToken: Byte -> Array Byte, tokpos: Byte -> Pos.SourcePos, test: Byte -> Option.Option a): ParsecT a =
+  let nextpos = \(_,tok, ts) -> match uncons(ts) {
     Option.None -> tokpos(tok),
     Option.Some(tok1,_) -> tokpos(tok1)
   } in
-  tokenPrim(stream, showToken, nextpos, test)
+  tokenPrim(showToken, nextpos, test)
 
 // -- | The parser @tokenPrim showTok nextPos testTok@ accepts a token @t@
 // -- with result @x@ when the function @testTok t@ returns @'Just' x@. The
@@ -772,8 +910,8 @@ token(stream: Stream s t, showToken: t -> Array Byte, tokpos: t -> Pos.SourcePos
 //           -> ParsecT s u m a
 // {-# INLINE tokenPrim #-}
 // tokenPrim showToken nextpos test = tokenPrimEx showToken nextpos Nothing test
-pub tokenPrim(stream: Stream s t, showToken: t -> Array Byte, nextpos: (Pos.SourcePos, t, s) -> Pos.SourcePos, test: t -> Option.Option a): ParsecT s u a r =
-  tokenPrimEx(stream, showToken, nextpos, Option.None, test)
+pub tokenPrim(showToken: Byte -> Array Byte, nextpos: (Pos.SourcePos, Byte, Iter.Iter Byte) -> Pos.SourcePos, test: Byte -> Option.Option a): ParsecT a =
+  tokenPrimEx(showToken, nextpos, Option.None, test)
 
 // tokenPrimEx :: (Stream s m t)
 //             => (t -> String)
@@ -807,31 +945,31 @@ pub tokenPrim(stream: Stream s t, showToken: t -> Array Byte, nextpos: (Pos.Sour
 //                         in seq newpos $ seq newstate $
 //                            cok x newstate $ newErrorUnknown newpos
 //               Nothing -> eerr $ unexpectError (showToken c) pos
-tokenPrimEx(stream: Stream s t, showToken: t -> Array Byte, nextpos: (Pos.SourcePos, t, s) -> Pos.SourcePos, nextStateM: Option.Option ((Pos.SourcePos, t, s, u) -> u), test: t -> Option.Option a): ParsecT s u a r =
+tokenPrimEx(showToken: Byte -> Array Byte, nextpos: (Pos.SourcePos, Byte, Iter.Iter Byte) -> Pos.SourcePos, nextStateM: Option.Option ((Pos.SourcePos, Byte, Iter.Iter Byte, Int) -> Int), test: Byte -> Option.Option a): ParsecT a =
   match nextStateM {
-    Option.None -> ParsecT(\(state, cok, _, _, eerr) ->
+    Option.None -> ParsecT(\state ->
       let State(input, pos, user) = state in
-      match uncons(stream, input) {
-        Option.None -> eerr(unexpectError("", pos)),
+      match uncons(input) {
+        Option.None -> handleEERR(unexpectError("", pos)),
         Option.Some(c, cs) -> match test(c) {
           Option.Some(x) ->
             let newpos = nextpos(pos, c, cs) in
             let newstate = State(cs, newpos, user) in
-            cok(x, newstate, Error.newErrorUnknown(newpos)),
-          Option.None -> eerr(unexpectError(showToken(c), pos))
+            handleCOK(x, newstate, Error.newErrorUnknown(newpos)),
+          Option.None -> handleEERR(unexpectError(showToken(c), pos))
         }
       }),
-    Option.Some(nextState) -> ParsecT(\(state, cok, _, _, eerr) ->
+    Option.Some(nextState) -> ParsecT(\state ->
       let State(input, pos, user) = state in
-      match uncons(stream, input) {
-        Option.None -> eerr(unexpectError("", pos)),
+      match uncons(input) {
+        Option.None -> handleEERR(unexpectError("", pos)),
         Option.Some(c, cs) -> match test(c) {
           Option.Some(x) ->
             let newpos = nextpos(pos, c, cs) in
             let newUser = nextState(pos, c, cs, user) in
             let newstate = State(cs, newpos, newUser) in
-            cok(x, newstate, Error.newErrorUnknown(newpos)),
-          Option.None -> eerr(unexpectError(showToken(c), pos))
+            handleCOK(x, newstate, Error.newErrorUnknown(newpos)),
+          Option.None -> handleEERR(unexpectError(showToken(c), pos))
         }
       })
   }
@@ -854,8 +992,9 @@ unexpectError(msg: Array Byte, pos: Pos.SourcePos): Error.ParseError =
 // many p
 //   = do xs <- manyAccum (:) p
 //        return (reverse xs)
-pub many(p: ParsecT s u a r): ParsecT s u (Array a) r =
-  parsecMap(Array.reverse, manyAccum(Array.push_front, p))
+pub many(p: ParsecT a): ParsecT (Array a) =
+  // parsecMap(Array.reverse, manyAccum(Array.push_front, p))
+  manyAccum(\(x, xs) -> Array.push(xs, x), p)
 
 // -- | @many1 p@ applies the parser @p@ /one/ or more times. Returns a
 // -- list of the returned values of @p@.
@@ -865,8 +1004,9 @@ pub many(p: ParsecT s u a r): ParsecT s u (Array a) r =
 // many1 :: ParsecT s u m a -> ParsecT s u m [a]
 // {-# INLINABLE many1 #-}
 // many1 p = do{ x <- p; xs <- many p; return (x:xs) }
-pub many1(p: ParsecT s u a r): ParsecT s u (Array a) r =
-  parserBind(p, \x -> parserBind(many(p), \xs -> parserReturn(Array.push_front(x, xs))))
+pub many1(p: ParsecT a): ParsecT (Array a) =
+  // parserBind(p, \x -> parserBind(many(p), \xs -> parserReturn(Array.push_front(x, xs))))
+  parserBind(p, \x -> parserBind(many(p), \xs -> parserReturn(Array.push(xs, x))))
 
 // -- | @skipMany p@ applies the parser @p@ /zero/ or more times, skipping
 // -- its result.
@@ -877,7 +1017,7 @@ pub many1(p: ParsecT s u a r): ParsecT s u (Array a) r =
 // skipMany p
 //   = do _ <- manyAccum (\_ _ -> []) p
 //        return ()
-pub skipMany(p: ParsecT s u a r): ParsecT s u () r =
+pub skipMany(p: ParsecT a): ParsecT () =
   parsecMap(\_ -> (), manyAccum(\(_,_) -> [], p))
 
 // manyAccum :: (a -> [a] -> [a])
@@ -892,17 +1032,28 @@ pub skipMany(p: ParsecT s u a r): ParsecT s u () r =
 //               manyErr                     -- empty-ok
 //               (\e -> cok (acc x xs) s' e) -- empty-err
 //     in unParser p s (walk []) cerr manyErr (\e -> eok [] s e)
-manyAccum(acc: (a, Array a) -> Array a, p: ParsecT s u a r): ParsecT s u (Array a) r =
-  ParsecT(\(s, cok, cerr, eok, _) ->
-    unParser(p, s, \(x, s1,_) -> walk1([], x, s1, p, acc, cerr, cok), cerr, manyErr, \e -> eok([], s, e)))
+manyAccum(acc: (a, Array a) -> Array a, p: ParsecT a): ParsecT (Array a) =
+  // ParsecT(\(s, cok, cerr, eok, _) ->
+  //   unParser(p, s, \(x, s1,_) -> walk1([], x, s1, p, acc, cerr, cok), cerr, manyErr, \e -> eok([], s, e)))
+  ParsecT(\s -> match unParser(p, s) {
+    Consumed(Ok(a, s1, err)) -> walk1([], a, s1, acc, p),
+    Consumed(Error(err)) -> Consumed(Error(err)),
+    Empty(Ok(a, s1, err)) -> panic("Text.ParserCombinators.Parsec.Prim.many: combinator 'many' is applied to a parser that accepts an empty string."),
+    Empty(Error(err)) -> Empty(Ok([], s, err))
+  })
 
-walk1(xs: Array a, x: a, s1: State s u, p: ParsecT s u a r, acc: (a, Array a) -> Array a, cerr: Error.ParseError -> r, cok: (Array a, State s u, Error.ParseError) -> r): r =
-  unParser(p, s1, \(x1, s2,_) -> walk1(acc(x, xs), x1, s2, p, acc, cerr, cok), cerr, \(_,_,_) -> manyErr, \e -> cok(acc(x, xs), s1, e))
+// walk1(xs: Array a, x: a, s1: State u, p: ParsecT a, acc: (a, Array a) -> Array a): Consumed (Reply a) =
+//   unParser(p, s1, \(x1, s2,_) -> walk1(acc(x, xs), x1, s2, p, acc), cerr, \(_,_,_) -> manyErr, \e -> cok(acc(x, xs), s1, e))
+walk1(accum: Array a, a: a, s: State, acc: (a, Array a) -> Array a, p: ParsecT a): Consumed (Reply (Array a)) =
+  match unParser(p, s) {
+    Consumed(Ok(a1, s1, _)) -> walk1(acc(a, accum), a1, s1, acc, p),
+    Consumed(Error(err)) -> handleCERR(err),
+    Empty(Ok(a1, s1, _)) -> panic("Text.ParserCombinators.Parsec.Prim.many: combinator 'many' is applied to a parser that accepts an empty string."),
+    Empty(Error(err)) -> handleCOK(acc(a, accum), s, err)
+  }
 
 // manyErr :: a
 // manyErr = error "Text.ParserCombinators.Parsec.Prim.many: combinator 'many' is applied to a parser that accepts an empty string."
-manyErr: a =
-  panic("Text.ParserCombinators.Parsec.Prim.many: combinator 'many' is applied to a parser that accepts an empty string.")
 
 
 // -- < Running a parser: monadic (runPT) and pure (runP)
@@ -921,7 +1072,7 @@ manyErr: a =
 //             = case res of
 //                 Consumed r -> r
 //                 Empty    r -> r
-runPT(p: ParsecT s u a (Consumed (Reply s u a)), u: u, name: Array Byte, s: s): Either.Either Error.ParseError a =
+runPT(p: ParsecT a, u: Int, name: Array Byte, s: Iter.Iter Byte): Either.Either Error.ParseError a =
   match parserReply(runParsecT(p, State(s, Pos.initialPos(name), u))) {
     Ok(x,_,_) -> Either.Right(x),
     Error(err) -> Either.Left(err)
@@ -936,7 +1087,7 @@ parserReply(res: Consumed a): a =
 // runP :: (Stream s Identity t)
 //      => Parsec s u a -> u -> SourceName -> s -> Either ParseError a
 // runP p u name s = runIdentity $ runPT p u name s
-runP(p: ParsecT s u a (Consumed (Reply s u a)), u: u, name: Array Byte, s: s): Either.Either Error.ParseError a =
+runP(p: ParsecT a, u: Int, name: Array Byte, s: Iter.Iter Byte): Either.Either Error.ParseError a =
   runPT(p, u, name, s)
 
 
@@ -950,7 +1101,7 @@ runP(p: ParsecT s u a (Consumed (Reply s u a)), u: u, name: Array Byte, s: s): E
 // runParserT :: (Stream s m t)
 //            => ParsecT s u m a -> u -> SourceName -> s -> m (Either ParseError a)
 // runParserT = runPT
-runParserT(p: ParsecT s u a (Consumed (Reply s u a)), u: u, name: Array Byte, s: s): Either.Either Error.ParseError a =
+runParserT(p: ParsecT a, u: Int, name: Array Byte, s: Iter.Iter Byte): Either.Either Error.ParseError a =
   runPT(p, u, name, s)
 
 // -- | The most general way to run a parser over the Identity monad. @runParser p state filePath
@@ -968,7 +1119,7 @@ runParserT(p: ParsecT s u a (Consumed (Reply s u a)), u: u, name: Array Byte, s:
 // runParser :: (Stream s Identity t)
 //           => Parsec s u a -> u -> SourceName -> s -> Either ParseError a
 // runParser = runP
-runParser(p: ParsecT s u a (Consumed (Reply s u a)), u: u, name: Array Byte, s: s): Either.Either Error.ParseError a =
+runParser(p: ParsecT a, u: Int, name: Array Byte, s: Iter.Iter Byte): Either.Either Error.ParseError a =
   runP(p, u, name, s)
 
 // -- | @parse p filePath input@ runs a parser @p@ over Identity without user
@@ -985,8 +1136,8 @@ runParser(p: ParsecT s u a (Consumed (Reply s u a)), u: u, name: Array Byte, s: 
 // parse :: (Stream s Identity t)
 //       => Parsec s () a -> SourceName -> s -> Either ParseError a
 // parse p = runP p ()
-pub parse(p: ParsecT s () a (Consumed (Reply s () a)), name: Array Byte, s: s): Either.Either Error.ParseError a =
-  runP(p, (), name, s)
+pub parse(p: ParsecT a, name: Array Byte, s: Iter.Iter Byte): Either.Either Error.ParseError a =
+  runP(p, 0, name, s)
 
 // -- | The expression @parseTest p input@ applies a parser @p@ against
 // -- input @input@ and prints the result to stdout. Used for testing
@@ -1007,7 +1158,7 @@ pub parse(p: ParsecT s () a (Consumed (Reply s () a)), name: Array Byte, s: s): 
 // getPosition :: (Monad m) => ParsecT s u m SourcePos
 // getPosition = do state <- getParserState
 //                  return (statePos state)
-getPosition: ParsecT s u Pos.SourcePos r =
+getPosition: ParsecT Pos.SourcePos =
   parsecMap(statePos, getParserState)
 
 
@@ -1016,7 +1167,7 @@ getPosition: ParsecT s u Pos.SourcePos r =
 // getInput :: (Monad m) => ParsecT s u m s
 // getInput = do state <- getParserState
 //               return (stateInput state)
-getInput: ParsecT s u s r =
+getInput: ParsecT (Iter.Iter Byte) =
   parsecMap(stateInput, getParserState)
 
 // -- | @setPosition pos@ sets the current source position to @pos@.
@@ -1025,7 +1176,7 @@ getInput: ParsecT s u s r =
 // setPosition pos
 //     = do _ <- updateParserState (\(State input _ user) -> State input pos user)
 //          return ()
-setPosition(pos: Pos.SourcePos): ParsecT s u () r =
+setPosition(pos: Pos.SourcePos): ParsecT () =
   parsecMap(\_ -> (), updateParserState(\state ->
     let State(input,_,user) = state in
     State(input, pos, user)))
@@ -1038,7 +1189,7 @@ setPosition(pos: Pos.SourcePos): ParsecT s u () r =
 // setInput input
 //     = do _ <- updateParserState (\(State _ pos user) -> State input pos user)
 //          return ()
-setInput(input: s): ParsecT s u () r =
+setInput(input: Iter.Iter Byte): ParsecT () =
   parsecMap(\_ -> (), updateParserState(\state ->
     let State(_,pos,user) = state in
     State(input, pos, user)))
@@ -1047,14 +1198,14 @@ setInput(input: s): ParsecT s u () r =
 
 // getParserState :: (Monad m) => ParsecT s u m (State s u)
 // getParserState = updateParserState id
-getParserState: ParsecT s u (State s u) r =
+getParserState: ParsecT (State) =
   updateParserState(Func.id)
 
 // -- | @setParserState st@ set the full parser state to @st@.
 
 // setParserState :: (Monad m) => State s u -> ParsecT s u m (State s u)
 // setParserState st = updateParserState (const st)
-setParserState(st: State s u): ParsecT s u (State s u) r =
+setParserState(st: State): ParsecT State =
   updateParserState(\_ -> st)
 
 // -- | @updateParserState f@ applies function @f@ to the parser state.
@@ -1064,10 +1215,13 @@ setParserState(st: State s u): ParsecT s u (State s u) r =
 //     ParsecT $ \s _ _ eok _ ->
 //     let s' = f s
 //     in eok s' s' $ unknownError s'
-updateParserState(f: State s u -> State s u): ParsecT s u (State s u) r =
-  ParsecT(\(s,_,_,eok,_) ->
+updateParserState(f: State -> State): ParsecT State =
+  // ParsecT(\(s,_,_,eok,_) ->
+  //   let s1 = f(s) in
+  //   eok(s1, s1, unknownError(s1)))
+  ParsecT(\s ->
     let s1 = f(s) in
-    eok(s1, s1, unknownError(s1)))
+    handleEOK(s1, s1, unknownError(s1)))
 
 // -- < User state combinators
 
@@ -1075,7 +1229,7 @@ updateParserState(f: State s u -> State s u): ParsecT s u (State s u) r =
 
 // getState :: (Monad m) => ParsecT s u m u
 // getState = stateUser `liftM` getParserState
-getState: ParsecT s u u r =
+getState: ParsecT Int =
   parsecMap(stateUser, getParserState)
 
 // -- | @putState st@ set the user state to @st@.
@@ -1083,7 +1237,7 @@ getState: ParsecT s u u r =
 // putState :: (Monad m) => u -> ParsecT s u m ()
 // putState u = do _ <- updateParserState $ \s -> s { stateUser = u }
 //                 return ()
-putState(u: u): ParsecT s u () r =
+putState(u: Int): ParsecT () =
   parsecMap(\_ -> (), updateParserState(\state ->
     let State(input, pos, user) = state in
     State(input, pos, u)))
@@ -1100,7 +1254,7 @@ putState(u: u): ParsecT s u () r =
 // modifyState :: (Monad m) => (u -> u) -> ParsecT s u m ()
 // modifyState f = do _ <- updateParserState $ \s -> s { stateUser = f (stateUser s) }
 //                    return ()
-modifyState(f: u -> u): ParsecT s u () r =
+modifyState(f: Int -> Int): ParsecT () =
   parsecMap(\_ -> (), updateParserState(\state ->
     let State(input, pos, user) = state in
     State(input, pos, f(user))))
@@ -1111,12 +1265,12 @@ modifyState(f: u -> u): ParsecT s u () r =
 
 // setState :: (Monad m) => u -> ParsecT s u m ()
 // setState = putState
-setState(u: u): ParsecT s u () r =
+setState(u: Int): ParsecT () =
   putState(u)
 
 // -- | An alias for modifyState for backwards compatibility.
 
 // updateState :: (Monad m) => (u -> u) -> ParsecT s u m ()
 // updateState = modifyState
-updateState(u: u -> u): ParsecT s u () r =
+updateState(u: Int -> Int): ParsecT () =
   modifyState(u)

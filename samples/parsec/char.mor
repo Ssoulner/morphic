@@ -24,8 +24,8 @@ import Prim
 // oneOf :: (Stream s m Char) => [Char] -> ParsecT s u m Char
 // {-# INLINABLE oneOf #-}
 // oneOf cs            = satisfy (\c -> elem c cs)
-pub oneOf(stream: Prim.Stream s Byte, cs: Array Byte): Prim.ParsecT s u Byte r =
-  satisfy(stream, \c -> Array.elem(c, cs, \(c1, c2) -> c1 =& c2))
+pub oneOf(cs: Array Byte): Prim.ParsecT Byte =
+  satisfy(\c -> Array.elem(c, cs, \(c1, c2) -> c1 =& c2))
 
 // -- | As the dual of 'oneOf', @noneOf cs@ succeeds if the current
 // -- character /not/ in the supplied list of characters @cs@. Returns the
@@ -36,16 +36,16 @@ pub oneOf(stream: Prim.Stream s Byte, cs: Array Byte): Prim.ParsecT s u Byte r =
 // noneOf :: (Stream s m Char) => [Char] -> ParsecT s u m Char
 // {-# INLINABLE noneOf #-}
 // noneOf cs           = satisfy (\c -> not (elem c cs))
-pub noneOf(stream: Prim.Stream s Byte, cs: Array Byte): Prim.ParsecT s u Byte r =
-  satisfy(stream, \c -> !(Array.elem(c, cs, \(c1, c2) -> c1 =& c2)))
+pub noneOf(cs: Array Byte): Prim.ParsecT Byte =
+  satisfy(\c -> !(Array.elem(c, cs, \(c1, c2) -> c1 =& c2)))
 
 // -- | Skips /zero/ or more white space characters. See also 'skipMany'.
 
 // spaces :: (Stream s m Char) => ParsecT s u m ()
 // {-# INLINABLE spaces #-}
 // spaces              = skipMany space        <?> "white space"
-spaces(stream: Prim.Stream s Byte): Prim.ParsecT s u () r =
-  Prim.withErr(Prim.skipMany(space(stream)), "white space")
+spaces: Prim.ParsecT () =
+  Prim.withErr(Prim.skipMany(space), "white space")
 
 // -- | Parses a white space character (any character which satisfies 'isSpace')
 // -- Returns the parsed character.
@@ -53,16 +53,16 @@ spaces(stream: Prim.Stream s Byte): Prim.ParsecT s u () r =
 // space :: (Stream s m Char) => ParsecT s u m Char
 // {-# INLINABLE space #-}
 // space               = satisfy isSpace       <?> "space"
-pub space(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
-  Prim.withErr(satisfy(stream, String.isSpace), "space")
+pub space: Prim.ParsecT Byte =
+  Prim.withErr(satisfy(String.isSpace), "space")
 
 // -- | Parses a newline character (\'\\n\'). Returns a newline character.
 
 // newline :: (Stream s m Char) => ParsecT s u m Char
 // {-# INLINABLE newline #-}
 // newline             = char '\n'             <?> "lf new-line"
-pub newline(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
-  Prim.withErr(char(stream, 10b), "lf new-line")
+pub newline: Prim.ParsecT Byte =
+  Prim.withErr(char(10b), "lf new-line")
 
 // -- | Parses a carriage return character (\'\\r\') followed by a newline character (\'\\n\').
 // -- Returns a newline character.
@@ -70,8 +70,8 @@ pub newline(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
 // crlf :: (Stream s m Char) => ParsecT s u m Char
 // {-# INLINABLE crlf #-}
 // crlf                = char '\r' *> char '\n' <?> "crlf new-line"
-pub crlf(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
-  Prim.withErr(Prim.parserBind(char(stream, 13b), Func.const(char(stream, 10b))), "crlf new-line")
+pub crlf: Prim.ParsecT Byte =
+  Prim.withErr(Prim.parserBind(char(13b), Func.const(char(10b))), "crlf new-line")
 
 // -- | Parses a CRLF (see 'crlf') or LF (see 'newline') end-of-line.
 // -- Returns a newline character (\'\\n\').
@@ -82,16 +82,16 @@ pub crlf(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
 // endOfLine :: (Stream s m Char) => ParsecT s u m Char
 // {-# INLINABLE endOfLine #-}
 // endOfLine           = newline <|> crlf       <?> "new-line"
-endOfLine(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
-  Prim.withErr(Prim.tryOr(newline(stream), crlf(stream)), "new-line")
+endOfLine: Prim.ParsecT Byte =
+  Prim.withErr(Prim.tryOr(newline, crlf), "new-line")
 
 // -- | Parses a tab character (\'\\t\'). Returns a tab character.
 
 // tab :: (Stream s m Char) => ParsecT s u m Char
 // {-# INLINABLE tab #-}
 // tab                 = char '\t'             <?> "tab"
-pub tab(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
-  Prim.withErr(char(stream, 09b), "tab")
+pub tab: Prim.ParsecT Byte =
+  Prim.withErr(char(09b), "tab")
 
 // -- | Parses an upper case letter (according to 'isUpper').
 // -- Returns the parsed character.
@@ -99,8 +99,8 @@ pub tab(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
 // upper :: (Stream s m Char) => ParsecT s u m Char
 // {-# INLINABLE upper #-}
 // upper               = satisfy isUpper       <?> "uppercase letter"
-pub upper(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
-  Prim.withErr(satisfy(stream, String.isUpper), "uppercase letter")
+pub upper: Prim.ParsecT Byte =
+  Prim.withErr(satisfy(String.isUpper), "uppercase letter")
 
 // -- | Parses a lower case character (according to 'isLower').
 // -- Returns the parsed character.
@@ -108,8 +108,8 @@ pub upper(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
 // lower :: (Stream s m Char) => ParsecT s u m Char
 // {-# INLINABLE lower #-}
 // lower               = satisfy isLower       <?> "lowercase letter"
-lower(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
-  Prim.withErr(satisfy(stream, String.isLower), "lowercase letter")
+lower: Prim.ParsecT Byte =
+  Prim.withErr(satisfy(String.isLower), "lowercase letter")
 
 
 // -- | Parses a alphabetic or numeric Unicode characters
@@ -122,8 +122,8 @@ lower(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
 // alphaNum :: (Stream s m Char => ParsecT s u m Char)
 // {-# INLINABLE alphaNum #-}
 // alphaNum            = satisfy isAlphaNum    <?> "letter or digit"
-pub alphaNum(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
-  Prim.withErr(satisfy(stream, String.isAlphaNum), "letter or digit")
+pub alphaNum: Prim.ParsecT Byte =
+  Prim.withErr(satisfy(String.isAlphaNum), "letter or digit")
 
 // -- | Parses an alphabetic Unicode characters (lower-case, upper-case and title-case letters,
 // -- plus letters of caseless scripts and modifiers letters according to 'isAlpha').
@@ -132,16 +132,16 @@ pub alphaNum(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
 // letter :: (Stream s m Char) => ParsecT s u m Char
 // {-# INLINABLE letter #-}
 // letter              = satisfy isAlpha       <?> "letter"
-pub letter(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
-  Prim.withErr(satisfy(stream, String.isAlpha), "letter")
+pub letter: Prim.ParsecT Byte =
+  Prim.withErr(satisfy(String.isAlpha), "letter")
 
 // -- | Parses an ASCII digit. Returns the parsed character.
 
 // digit :: (Stream s m Char) => ParsecT s u m Char
 // {-# INLINABLE digit #-}
 // digit               = satisfy isDigit       <?> "digit"
-pub digit(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
-  Prim.withErr(satisfy(stream, String.isDigit), "digit")
+pub digit: Prim.ParsecT Byte =
+  Prim.withErr(satisfy(String.isDigit), "digit")
 
 // -- | Parses a hexadecimal digit (a digit or a letter between \'a\' and
 // -- \'f\' or \'A\' and \'F\'). Returns the parsed character.
@@ -149,8 +149,8 @@ pub digit(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
 // hexDigit :: (Stream s m Char) => ParsecT s u m Char
 // {-# INLINABLE hexDigit #-}
 // hexDigit            = satisfy isHexDigit    <?> "hexadecimal digit"
-pub hexDigit(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
-  Prim.withErr(satisfy(stream, String.isHexDigit), "hexadecimal digit")
+pub hexDigit: Prim.ParsecT Byte =
+  Prim.withErr(satisfy(String.isHexDigit), "hexadecimal digit")
 
 // -- | Parses an octal digit (a character between \'0\' and \'7\'). Returns
 // -- the parsed character.
@@ -158,8 +158,8 @@ pub hexDigit(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
 // octDigit :: (Stream s m Char) => ParsecT s u m Char
 // {-# INLINABLE octDigit #-}
 // octDigit            = satisfy isOctDigit    <?> "octal digit"
-pub octDigit(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
-  Prim.withErr(satisfy(stream, String.isOctDigit), "octal digit")
+pub octDigit: Prim.ParsecT Byte =
+  Prim.withErr(satisfy(String.isOctDigit), "octal digit")
 
 // -- | @char c@ parses a single character @c@. Returns the parsed
 // -- character (i.e. @c@).
@@ -169,16 +169,16 @@ pub octDigit(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
 // char :: (Stream s m Char) => Char -> ParsecT s u m Char
 // {-# INLINABLE char #-}
 // char c              = satisfy (==c)  <?> show [c]
-pub char(stream: Prim.Stream s Byte, c: Byte): Prim.ParsecT s u Byte r =
-  Prim.withErr(satisfy(stream, \c1 -> c1 =& c), [c])
+pub char(c: Byte): Prim.ParsecT Byte =
+  Prim.withErr(satisfy(\c1 -> c1 =& c), [c])
 
 // -- | This parser succeeds for any character. Returns the parsed character.
 
 // anyChar :: (Stream s m Char) => ParsecT s u m Char
 // {-# INLINABLE anyChar #-}
 // anyChar             = satisfy (const True)
-anyChar(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
-  satisfy(stream, Func.const(True))
+anyChar: Prim.ParsecT Byte =
+  satisfy(Func.const(True))
 
 // -- | The parser @satisfy f@ succeeds for any character for which the
 // -- supplied function @f@ returns 'True'. Returns the character that is
@@ -192,8 +192,8 @@ anyChar(stream: Prim.Stream s Byte): Prim.ParsecT s u Byte r =
 // satisfy f           = tokenPrim (\c -> show [c])
 //                                 (\pos c _cs -> updatePosChar pos c)
 //                                 (\c -> if f c then Just c else Nothing)
-pub satisfy(stream: Prim.Stream s Byte, f: Byte -> Bool): Prim.ParsecT s u Byte r =
-  Prim.tokenPrim(stream, \c -> [c], \(pos, c, _) -> Pos.updatePosChar(pos, c), \c -> if f(c) {
+pub satisfy(f: Byte -> Bool): Prim.ParsecT Byte =
+  Prim.tokenPrim(\c -> [c], \(pos, c, _) -> Pos.updatePosChar(pos, c), \c -> if f(c) {
     Option.Some(c)
   } else {
     Option.None
@@ -210,8 +210,8 @@ pub satisfy(stream: Prim.Stream s Byte, f: Byte -> Bool): Prim.ParsecT s u Byte 
 // string :: (Stream s m Char) => String -> ParsecT s u m String
 // {-# INLINABLE string #-}
 // string s            = tokens show updatePosString s
-pub string(stream: Prim.Stream s Byte, s: Array Byte): Prim.ParsecT s u (Array Byte) r =
-  Prim.tokens(stream, \(c1, c2) -> c1 =& c2, Func.id, Pos.updatePosString, s)
+pub string(s: Array Byte): Prim.ParsecT (Array Byte) =
+  Prim.tokens(\(c1, c2) -> c1 =& c2, Array.from_iter, Pos.updatePosString, Iter.items(s))
 
 // -- | @'string'' s@ parses a sequence of characters given by @s@.
 // -- Doesn't consume matching prefix.
@@ -224,5 +224,6 @@ pub string(stream: Prim.Stream s Byte, s: Array Byte): Prim.ParsecT s u (Array B
 // string' :: (Stream s m Char) => String -> ParsecT s u m String
 // {-# INLINABLE string' #-}
 // string' s            = tokens' show updatePosString s
-pub string1(stream: Prim.Stream s Byte, s: Array Byte): Prim.ParsecT s u (Array Byte) r =
-  Prim.tokens1(stream, \(c1, c2) -> c1 =& c2, Func.id, Pos.updatePosString, s)
+pub string1(s: Array Byte): Prim.ParsecT (Array Byte) =
+  // Prim.tokens1(\(c1, c2) -> c1 =& c2, Array.from_iter, Pos.updatePosString, Iter.items(s))
+  Prim.tokens1(Array.from_iter, Pos.updatePosString, Iter.items(s))

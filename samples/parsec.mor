@@ -10,9 +10,9 @@ pub module Char = file "parsec/char.mor" with { Core, Pos, Error, Prim }
 
 pub module Combinator = file "parsec/combinator.mor" with { Core, Pos, Error, Prim }
 
-pub module Expr = file "parsec/expr.mor" with { Core, Prim, Combinator }
+// pub module Expr = file "parsec/expr.mor" with { Core, Prim, Combinator }
 
-pub module Token = file "parsec/token.mor" with { Core, Char, Pos, Error, Prim, Combinator }
+// pub module Token = file "parsec/token.mor" with { Core, Char, Pos, Error, Prim, Combinator }
 
 // pub module Perm = file "parsec/perm.mor" with { Core, Prim, Combinator }
 
