@@ -101,6 +101,30 @@ pub take_while(it: Iter a, f: a -> Bool): Iter a =
     }
   )
 
+pub skip(it: Iter a, count: Int): Iter a =
+  if count = 0 {
+    it
+  } else {
+    Iter(\() ->
+      match next(it) {
+        Some(x, xs) -> next(skip(xs, count - 1)),
+        None -> None
+      }
+    )
+  }
+
+pub skip_while(it: Iter a, f: a -> Bool): Iter a =
+  Iter(\() ->
+    match next(it) {
+      None -> None,
+      Some(x, xs) -> if f(x) {
+        next(skip_while(xs, f))
+      } else {
+        Some(x, xs)
+      }
+    }
+  )
+
 pub zip(it1: Iter a, it2: Iter b): Iter (a, b) =
   Iter(\() ->
     match (next(it1), next(it2)) {
@@ -108,6 +132,11 @@ pub zip(it1: Iter a, it2: Iter b): Iter (a, b) =
       _ -> None,
     }
   )
+
+pub split(iter: Iter a, f: a -> Bool): (Iter a, Iter a) =
+  let first = take_while(iter, \x -> f(x)) in
+  let second = skip_while(iter, \x -> f(x)) in
+  (first, second)
 
 pub enumerate(it: Iter a): Iter (Int, a) =
   zip(ints(0), it)
