@@ -711,7 +711,8 @@ eval(minhs: MinHS): MinHS =
 run_program(source: Array Byte): Result.Result MinHS (Array Byte) =
   let expr_opt = parse_expression(Iter.items(source)) in
     match expr_opt {
-      Either.Left(err) -> Result.Err(Error.messageString(Array.get(Error.errorMessages(err), 0))),
+      // Either.Left(err) -> Result.Err(Error.messageString(Array.get(Error.errorMessages(err), 0))),
+      Either.Left(err) -> Result.Err(Error.showParseError(err)),
       Either.Right(named_expr) ->
         let expr = dename_expression(named_expr) in
         let env = Hashmap.empty(Func.id, \(i1, i2) -> i1 = i2) in

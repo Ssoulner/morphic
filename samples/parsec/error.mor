@@ -2,7 +2,9 @@ import Core
   expose {
     module Array,
     module Iter,
-    module Ord
+    module Ord,
+    module Option,
+    module String
   }
 
 import Pos expose { SourcePos }
@@ -135,6 +137,8 @@ compareErrorPos(x: Pos.SourcePos, y: Pos.SourcePos): Ord.Ordering =
     Ord.LT -> Ord.LT
   }
 
+pub showParseError(err: ParseError): Array Byte =
+  Pos.showPos(errorPos(err)) |> Array.concat(":") |> Array.concat(showErrorMessages("or", "unknown parse error", "expecting", "unexpected", "end of input", errorMessages(err))) |> Array.concat("\n")
 // instance Show ParseError where
 //     show err
 //         = show (errorPos err) ++ ":" ++
@@ -202,3 +206,63 @@ compareErrorPos(x: Pos.SourcePos, y: Pos.SourcePos): Ord.Ordering =
 //       separate sep (m:ms) = m ++ sep ++ separate sep ms
 
 //       clean             = nub . filter (not . null)
+showErrorMessages(msgOr: Array Byte, msgUnknown: Array Byte, msgExpecting: Array Byte, msgUnExpected: Array Byte, msgEndOfInput: Array Byte, msgs: Array Message): Array Byte =
+  if Array.is_empty(msgs) {
+    msgUnknown
+  } else {
+    let (sysUnExpect, msgs1) = Array.span(msgs, \msg -> eqMessage(msg, SysUnExpect(""))) in
+    let (unExpect, msgs2) = Array.span(msgs1, \msg -> eqMessage(msg, UnExpect(""))) in
+    let (expect, messages) = Array.span(msgs2, \msg -> eqMessage(msg, Expect(""))) in
+    let showExpect = showMany(msgOr, msgExpecting, expect) in
+    let showUnExpect = showMany(msgOr, msgUnExpected, unExpect) in
+    let showSysUnExpect = if !(Array.is_empty(unExpect)) {
+      ""
+    } else {
+      match Iter.next(Iter.items(sysUnExpect)) {
+        Option.None -> "",
+        Option.Some(msg, rest) -> if Array.is_empty(messageString(msg)) {
+          msgUnExpected |> Array.concat(" ") |> Array.concat(msgEndOfInput)
+        } else {
+          msgUnExpected |> Array.concat(" ") |> Array.concat(messageString(msg))
+        }
+      }
+    } in
+    Array.foldl(Array.map(clean([showSysUnExpect, showUnExpect, showExpect, showMessages(msgOr, messages)]), \m -> Array.concat("\n", m)), "", Array.concat)
+  }
+
+showMessages(msgOr: Array Byte, msgs: Array Message): Array Byte =
+  showMany(msgOr, "", msgs)
+
+showMany(msgOr: Array Byte, pre: Array Byte, msgs3: Array Message): Array Byte =
+  let ms = clean(Array.map(msgs3, messageString)) in
+  if Array.is_empty(ms) {
+    ""
+  } else if Array.is_empty(pre) {
+    commasOr(msgOr, ms)
+  } else {
+    pre |> Array.concat(" ") |> Array.concat(commasOr(msgOr, ms))
+  }
+
+commasOr(msgOr: Array Byte, ms1: Array (Array Byte)): Array Byte =
+  match Iter.next(Iter.items(ms1)) {
+    Option.None -> "",
+    Option.Some(m, ms) -> match Iter.next(ms) {
+      Option.None -> m,
+      Option.Some(_,_) -> commaSep(Option.unwrap(Array.init(Array.from_iter(ms)))) |> Array.concat(" ") |> Array.concat(msgOr) |> Array.concat(" ") |> Array.concat(Option.unwrap(Array.last(Array.from_iter(ms))))
+    }
+  }
+
+commaSep(msgs: Array (Array Byte)): Array Byte =
+  separate(", ", clean(msgs))
+
+separate(sep: Array Byte, ms1: Array (Array Byte)): Array Byte =
+  match Iter.next(Iter.items(ms1)) {
+    Option.None -> "",
+    Option.Some(m, ms) -> match Iter.next(ms) {
+      Option.None -> m,
+      Option.Some(_,_) -> m |> Array.concat(sep) |> Array.concat(separate(sep, Array.from_iter(ms)))
+    }
+  }
+
+clean(msgs: Array (Array Byte)): Array (Array Byte) =
+  Array.nub(Array.from_iter(Iter.filter(Iter.items(msgs), \msg -> !Array.is_empty(msg))), String.equal)

@@ -105,6 +105,32 @@ pub slice(arr: Array t, start: Int, end: Int): Array t =
     slice_rec(arr, start, end, end - 1)
   }
 
+span_rec(arr: Iter t, constr: t -> Bool, acc: Array t): (Array t, Array t) =
+  match Iter.next(arr) {
+    Option.None -> (acc, []),
+    Option.Some(x, xs) ->
+    if constr(x) {
+      span_rec(xs, constr, push(acc, x))
+    } else {
+      (acc, from_iter(arr))
+    }
+  }
+
+pub span(arr: Array t, constr: t -> Bool): (Array t, Array t) =
+  span_rec(Iter.items(arr), constr, [])
+
+pub last(arr: Array t): Option.Option t =
+  match Iter.next(Iter.items(reverse(arr))) {
+    Option.None -> Option.None,
+    Option.Some(x,_) -> Option.Some(x)
+  }
+
+pub init(arr: Array t): Option.Option (Array t) =
+  match Iter.next(Iter.items(reverse(arr))) {
+    Option.None -> Option.None,
+    Option.Some(_,xs) -> Option.Some(reverse(from_iter(xs)))
+  }
+
 zip_rec(a: Array t, b: Array u, i: Int): Array (t, u) =
   if i < 0 {
     []

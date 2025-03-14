@@ -1,4 +1,9 @@
 pub module Core = file "lib/core/core.mor"
+  expose {
+    module Either,
+    module Iter,
+    module Array
+  }
 
 pub module Pos = file "parsec/pos.mor" with { Core }
 
@@ -26,4 +31,9 @@ pub module Combinator = file "parsec/combinator.mor" with { Core, Pos, Error, Pr
 
 
 
-proc main(): () = do output("It worked!\n")
+proc main(): () =
+  let inp = "innPut" in
+  match Prim.parse(Char.string1("inPut"), "Input file", Iter.items(inp)) {
+    Either.Left(err) -> do output(Error.showParseError(err)),
+    Either.Right(res) -> do output("DONE!")
+  }

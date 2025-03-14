@@ -1932,7 +1932,6 @@ fn solve_scc(
     for func_id in scc.nodes {
         let arg_ty = &instantiated.func_args[&func_id];
         let ret_ty = &instantiated.func_rets[&func_id];
-
         let arg_ty = subst_modes(arg_ty, |m| solution.internal_to_external[&m]);
         let ret_ty = subst_modes(ret_ty, |m| solution.internal_to_external[&m]);
         let body = extract_expr(&solution, &instantiated.func_bodies[&func_id]);
