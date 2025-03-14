@@ -127,7 +127,7 @@ pub join(xs: Array (Array Byte), sep: Array Byte): Array Byte =
 
 pub isSpace(b: Byte): Bool =
   match b {
-    10b -> True,
+    32b -> True,
     _ -> False
   }
 

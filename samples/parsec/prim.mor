@@ -1005,8 +1005,7 @@ pub many(p: ParsecT a): ParsecT (Array a) =
 // {-# INLINABLE many1 #-}
 // many1 p = do{ x <- p; xs <- many p; return (x:xs) }
 pub many1(p: ParsecT a): ParsecT (Array a) =
-  // parserBind(p, \x -> parserBind(many(p), \xs -> parserReturn(Array.push_front(x, xs))))
-  parserBind(p, \x -> parserBind(many(p), \xs -> parserReturn(Array.push(xs, x))))
+  parserBind(p, \x -> parserBind(many(p), \xs -> parserReturn(Array.push_front(x, xs))))
 
 // -- | @skipMany p@ applies the parser @p@ /zero/ or more times, skipping
 // -- its result.
