@@ -281,6 +281,14 @@ fn compile_to_first_order_ast(
             .map_err(ErrorKind::WriteIrFailed)?;
     }
 
+    if let Some(artifact_dir) = artifact_dir {
+        let mut out_file = fs::File::create(artifact_dir.artifact_path("typed.hs"))
+            .map_err(ErrorKind::WriteIrFailed)?;
+
+        pretty_print::typed::write_haskell_program(&mut out_file, &typed)
+            .map_err(ErrorKind::WriteIrFailed)?;
+    }
+
     let mono = monomorphize::monomorphize(typed);
 
     if let Some(artifact_dir) = artifact_dir {

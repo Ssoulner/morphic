@@ -4,6 +4,7 @@ use crate::data::resolved_ast::{
     VariantId,
 };
 use crate::data::typed_ast::*;
+use crate::data::intrinsics::Intrinsic;
 use crate::util::graph::{self, Graph};
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -12,9 +13,11 @@ use std::io::Write;
 
 const TAB_SIZE: usize = 2;
 
+#[derive(PartialEq, Eq)]
 enum MlVariant {
     OCAML,
     SML,
+    HASKELL,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -30,6 +33,7 @@ struct Context<'a, 'b> {
     writer: &'b mut dyn Write,
     indentation: usize,
     num_locals: usize,
+    num_ignored: usize,
     prog: &'a Program,
 }
 
@@ -60,40 +64,88 @@ impl<'a, 'b> Context<'a, 'b> {
     }
 
     fn write_type_var(&mut self, type_var: &TypeParamId) -> io::Result<()> {
-        self.write("'")?;
-        let mut result_str = String::new();
-        let mut accum = type_var.0;
-        while accum != 0 {
-            result_str.push(char::from_u32((accum % 64 + ('a' as usize)) as u32).unwrap());
-            accum = accum / 26;
-        }
+        match self.variant {
+            MlVariant::HASKELL => {
+                let mut result_str = String::new();
+                let mut accum = type_var.0;
+                while accum != 0 {
+                    result_str.push(char::from_u32((accum % 64 + ('a' as usize)) as u32).unwrap());
+                    accum = accum / 26;
+                }
 
-        if &result_str == "" {
-            result_str = "a".to_string();
+                if &result_str == "" {
+                    result_str = "a".to_string();
+                }
+                self.write(&result_str)?;
+            }
+            _ => {
+                self.write("'")?;
+                let mut result_str = String::new();
+                let mut accum = type_var.0;
+                while accum != 0 {
+                    result_str.push(char::from_u32((accum % 64 + ('a' as usize)) as u32).unwrap());
+                    accum = accum / 26;
+                }
+
+                if &result_str == "" {
+                    result_str = "a".to_string();
+                }
+                self.write(&result_str)?;
+            }
         }
-        self.write(&result_str)?;
         Ok(())
     }
 
     fn write_type_id(&mut self, type_id: &TypeId) -> io::Result<()> {
         match type_id {
-            TypeId::Bool => self.write("bool")?,
-            TypeId::Byte => self.write("char")?,
+            TypeId::Bool => {
+                if self.variant == MlVariant::HASKELL {
+                    self.write("Bool")?;
+                } else {
+                    self.write("bool")?
+                }
+            }
+            TypeId::Byte => {
+                if self.variant == MlVariant::HASKELL {
+                    self.write("Word8")?;
+                } else {
+                    self.write("char")?
+                }
+            }
             TypeId::Int => match self.variant {
                 MlVariant::OCAML => self.write("int64")?,
                 MlVariant::SML => self.write("int")?,
+                MlVariant::HASKELL => self.write("Int64")?,
             },
             TypeId::Float => match self.variant {
                 MlVariant::OCAML => self.write("float")?,
                 MlVariant::SML => self.write("real")?,
+                MlVariant::HASKELL => self.write("Double")?,
             },
-            TypeId::Array => self.write("PersistentArray.array")?,
-            TypeId::Custom(type_id) => self.write(
-                &self.prog.custom_type_symbols[type_id]
-                    .type_name
-                    .0
-                    .to_lowercase(),
-            )?,
+            TypeId::Array => match self.variant {
+                MlVariant::OCAML | MlVariant::SML => self.write("PersistentArray.array")?,
+                MlVariant::HASKELL => self.write("[]")?,
+            },
+            TypeId::Custom(type_id) => {
+                if self.variant == MlVariant::HASKELL {
+                    let name = &self.prog.custom_type_symbols[type_id].type_name.0;
+                    if !name.is_empty() && name.chars().next().unwrap().is_uppercase() {
+                        self.write(name)?;
+                    } else {
+                        let capitalized = name.chars().next().map_or(String::new(), |c| {
+                            c.to_uppercase().collect::<String>() + &name[c.len_utf8()..]
+                        });
+                        self.write(&capitalized)?;
+                    }
+                } else {
+                    self.write(
+                        &self.prog.custom_type_symbols[type_id]
+                            .type_name
+                            .0
+                            .to_lowercase(),
+                    )?;
+                }
+            },
         }
         Ok(())
     }
@@ -118,37 +170,115 @@ impl<'a, 'b> Context<'a, 'b> {
         match type_ {
             Type::Var(type_var) => self.write_type_var(type_var)?,
             Type::App(type_id, args) => {
-                if args.len() == 1 {
-                    self.write_type(&args[0], Precedence::Var)?;
-                    self.write(" ")?;
-                } else if args.len() > 1 {
-                    self.write("(")?;
-                    for (i, arg) in args.iter().enumerate() {
-                        self.write_type(arg, Precedence::Var)?;
-                        if i != args.len() - 1 {
-                            self.write(", ")?;
+                match self.variant {
+                    MlVariant::HASKELL => {
+                        match type_id {
+                            TypeId::Array => {
+                                if args.len() == 1 {
+                                    self.write("[")?;
+                                    self.write_type(&args[0], Precedence::Top)?;
+                                    self.write("]")?;
+                                    return if precedence > my_precedence {
+                                        self.write(")")?;
+                                        Ok(())
+                                    } else {
+                                        Ok(())
+                                    };
+                                }
+                            },
+                            TypeId::Custom(_) => {
+                                if args.len() == 0 {
+                                    self.write_type_id(type_id)?;
+                                } else {
+                                    self.write("(")?;
+                                    self.write_type_id(type_id)?;
+                                    self.write(" ")?;
+                                    for (i, arg) in args.iter().enumerate() {
+                                        self.write_type(arg, Precedence::App)?;
+                                        if i != args.len() - 1 {
+                                            self.write(" ")?;
+                                        }
+                                    }
+                                    self.write(")")?;
+                                }
+                                return if precedence > my_precedence {
+                                    self.write(")")?;
+                                    Ok(())
+                                } else {
+                                    Ok(())
+                                };
+                            }
+                            _ => {}
                         }
+                        
+                        self.write_type_id(type_id)?;
+                        if args.len() > 0 {
+                            self.write(" ")?;
+                            for (i, arg) in args.iter().enumerate() {
+                                self.write_type(arg, Precedence::App)?;
+                                if i != args.len() - 1 {
+                                    self.write(" ")?;
+                                }
+                            }
+                        }
+                    },
+                    _ => {
+                        if args.len() == 1 {
+                            self.write_type(&args[0], Precedence::Var)?;
+                            self.write(" ")?;
+                        } else if args.len() > 1 {
+                            self.write("(")?;
+                            for (i, arg) in args.iter().enumerate() {
+                                self.write_type(arg, Precedence::Var)?;
+                                if i != args.len() - 1 {
+                                    self.write(", ")?;
+                                }
+                            }
+                            self.write(") ")?;
+                        }
+                        self.write_type_id(type_id)?;
                     }
-                    self.write(") ")?;
                 }
-                self.write_type_id(type_id)?;
             }
             Type::Tuple(types) => {
                 if types.len() == 0 {
-                    self.write("unit")?;
+                    match self.variant {
+                        MlVariant::HASKELL => self.write("()")?,
+                        _ => self.write("unit")?,
+                    }
                 } else {
-                    for (i, type_) in types.iter().enumerate() {
-                        self.write_type(type_, Precedence::App)?;
-                        if i != types.len() - 1 {
-                            self.write(" * ")?;
+                    match self.variant {
+                        MlVariant::HASKELL => {
+                            self.write("(")?;
+                            for (i, type_) in types.iter().enumerate() {
+                                self.write_type(type_, Precedence::Top)?;
+                                if i != types.len() - 1 {
+                                    self.write(", ")?;
+                                }
+                            }
+                            self.write(")")?;
+                        },
+                        _ => {
+                            for (i, type_) in types.iter().enumerate() {
+                                self.write_type(type_, Precedence::App)?;
+                                if i != types.len() - 1 {
+                                    self.write(" * ")?;
+                                }
+                            }
                         }
                     }
                 }
             }
             Type::Func(_purity, arg_type, ret_type) => {
+                if self.variant == MlVariant::HASKELL {
+                    self.write("(")?;
+                }
                 self.write_type(arg_type, Precedence::App)?;
                 self.write(" -> ")?;
                 self.write_type(ret_type, Precedence::Top)?;
+                if self.variant == MlVariant::HASKELL {
+                    self.write(")")?;
+                }
             }
         }
 
@@ -160,11 +290,26 @@ impl<'a, 'b> Context<'a, 'b> {
     }
 
     fn write_variant(&mut self, type_id: CustomTypeId, variant_id: VariantId) -> io::Result<()> {
-        self.write(
-            &self.prog.custom_type_symbols[type_id].variant_symbols[variant_id]
-                .variant_name
-                .0,
-        )?;
+        match self.variant {
+            MlVariant::HASKELL => {
+                let name = &self.prog.custom_type_symbols[type_id].variant_symbols[variant_id].variant_name.0;
+                if !name.is_empty() && name.chars().next().unwrap().is_uppercase() {
+                    self.write(name)?;
+                } else {
+                    let capitalized = name.chars().next().map_or(String::new(), |c| {
+                        c.to_uppercase().collect::<String>() + &name[c.len_utf8()..]
+                    });
+                    self.write(&capitalized)?;
+                }
+            },
+            _ => {
+                self.write(
+                    &self.prog.custom_type_symbols[type_id].variant_symbols[variant_id]
+                        .variant_name
+                        .0,
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -175,7 +320,13 @@ impl<'a, 'b> Context<'a, 'b> {
     fn write_pattern_rec(&mut self, p: &Pattern, write_type: bool) -> io::Result<usize> {
         match p {
             Pattern::Any(_) => {
-                self.write("_")?;
+                if self.variant == MlVariant::HASKELL {
+                    self.write("l_")?;
+                    self.write(self.num_ignored)?;
+                    self.num_ignored += 1;
+                } else {
+                    self.write("_")?;
+                }
                 Ok(0)
             }
 
@@ -193,6 +344,7 @@ impl<'a, 'b> Context<'a, 'b> {
                         self.write(" : ")?;
                         self.write_type(var_type, Precedence::Top)?;
                     }
+                    MlVariant::HASKELL => {}
                 }
                 Ok(1)
             }
@@ -243,10 +395,24 @@ impl<'a, 'b> Context<'a, 'b> {
                         if pats.len() == 0 {
                             self.write("unit")?;
                         } else {
-                            for (i, pat) in pats.iter().enumerate() {
-                                self.write_type(&pat_to_type(pat), Precedence::App)?;
-                                if i != pats.len() - 1 {
-                                    self.write(" * ")?;
+                            match self.variant {
+                                MlVariant::OCAML | MlVariant::SML => {
+                                    for (i, pat) in pats.iter().enumerate() {
+                                        self.write_type(&pat_to_type(pat), Precedence::App)?;
+                                        if i != pats.len() - 1 {
+                                            self.write(" * ")?;
+                                        }
+                                    }
+                                }
+                                MlVariant::HASKELL => {
+                                    self.write("(")?;
+                                    for (i, pat) in pats.iter().enumerate() {
+                                        self.write_type(&pat_to_type(pat), Precedence::Top)?;
+                                        if i != pats.len() - 1 {
+                                            self.write(", ")?;
+                                        }
+                                    }
+                                    self.write(")")?;
                                 }
                             }
                         }
@@ -259,8 +425,14 @@ impl<'a, 'b> Context<'a, 'b> {
             Pattern::Ctor(type_id, _type_args, variant_id, maybe_pattern) => {
                 match type_id {
                     TypeId::Bool => match variant_id.0 {
-                        0 => self.write("false")?,
-                        1 => self.write("true")?,
+                        0 => match self.variant {
+                            MlVariant::HASKELL => self.write("False")?,
+                            _ => self.write("false")?,
+                        },
+                        1 => match self.variant {
+                            MlVariant::HASKELL => self.write("True")?,
+                            _ => self.write("true")?,
+                        },
                         _ => unreachable!(),
                     },
                     TypeId::Byte => todo!(),
@@ -273,9 +445,15 @@ impl<'a, 'b> Context<'a, 'b> {
                 }
                 let new_locals = match maybe_pattern {
                     Some(p) => {
-                        self.write(" (")?;
+                        match self.variant {
+                            MlVariant::HASKELL => self.write(" ")?,
+                            _ => self.write(" (")?
+                        }
                         let n = self.write_pattern_rec(p, write_type)?;
-                        self.write(")")?;
+                        match self.variant {
+                            MlVariant::HASKELL => {},
+                            _ => self.write(")")?
+                        }
                         n
                     }
                     None => 0,
@@ -298,16 +476,63 @@ impl<'a, 'b> Context<'a, 'b> {
     fn write_global_id(&mut self, global_id: &GlobalId) -> io::Result<()> {
         match global_id {
             GlobalId::Intrinsic(intrinsic) => {
-                self.write("intrinsic_")?;
-                self.write(&format!("{:?}", intrinsic))?;
+                match self.variant {
+                    MlVariant::HASKELL => {
+                        match intrinsic {
+                            Intrinsic::AddByte | Intrinsic::AddInt | Intrinsic::AddFloat => self.write("uncurry (+)")?,
+                            Intrinsic::SubByte | Intrinsic::SubInt | Intrinsic::SubFloat => self.write("uncurry (-)")?,
+                            Intrinsic::MulByte | Intrinsic::MulInt | Intrinsic::MulFloat => self.write("uncurry (*)")?,
+                            Intrinsic::DivByte | Intrinsic::DivInt | Intrinsic::DivFloat => self.write("uncurry divv")?,
+                            Intrinsic::NegByte | Intrinsic::NegInt | Intrinsic::NegFloat => self.write("negate")?,
+                            Intrinsic::EqByte  | Intrinsic::EqInt  | Intrinsic::EqFloat  => self.write("uncurry (==)")?,
+                            Intrinsic::LtByte  | Intrinsic::LtInt  | Intrinsic::LtFloat  => self.write("uncurry (<)")?,
+                            Intrinsic::LteByte | Intrinsic::LteInt | Intrinsic::LteFloat => self.write("uncurry (<=)")?,
+                            Intrinsic::GtByte  | Intrinsic::GtInt  | Intrinsic::GtFloat  => self.write("uncurry (>)")?,
+                            Intrinsic::GteByte | Intrinsic::GteInt | Intrinsic::GteFloat => self.write("uncurry (>=)")?,
+                            Intrinsic::Not => self.write("not")?,
+                            Intrinsic::ByteToInt | Intrinsic::IntToByte => self.write("fromIntegral")?,
+                            Intrinsic::IntShiftLeft => self.write("uncurry shiftL_")?,
+                            Intrinsic::IntShiftRight => self.write("uncurry shiftR_")?,
+                            Intrinsic::IntBitAnd => self.write("uncurry (.&.)")?,
+                            Intrinsic::IntBitOr => self.write("uncurry (.|.)")?,
+                            Intrinsic::IntBitXor => self.write("uncurry xor")?,
+                            _ => {
+                                // non inlined intrinsics: ByteToIntSigned
+                                self.write(&format!("intrinsic{:?}", intrinsic))?;
+                            }
+                        }
+                    },
+                    _ => {
+                        self.write("intrinsic_")?;
+                        self.write(&format!("{:?}", intrinsic))?;
+                    }
+                }
             }
             GlobalId::ArrayOp(array_op) => match array_op {
-                ArrayOp::Get => self.write("intrinsic_get")?,
-                ArrayOp::Extract => self.write("intrinsic_extract")?,
-                ArrayOp::Len => self.write("intrinsic_len")?,
-                ArrayOp::Push => self.write("intrinsic_push")?,
-                ArrayOp::Pop => self.write("intrinsic_pop")?,
-                ArrayOp::Reserve => self.write("intrinsic_reserve")?,
+                ArrayOp::Get => match self.variant {
+                    MlVariant::HASKELL => self.write("uncurry intrinsicGet")?,
+                    _ => self.write("intrinsic_get")?,
+                },
+                ArrayOp::Extract => match self.variant {
+                    MlVariant::HASKELL => self.write("uncurry intrinsicExtract")?,
+                    _ => self.write("intrinsic_extract")?,
+                },
+                ArrayOp::Len => match self.variant {
+                    MlVariant::HASKELL => self.write("intrinsicLen")?,
+                    _ => self.write("intrinsic_len")?,
+                },
+                ArrayOp::Push => match self.variant {
+                    MlVariant::HASKELL => self.write("uncurry intrinsicPush")?,
+                    _ => self.write("intrinsic_push")?,
+                },
+                ArrayOp::Pop => match self.variant {
+                    MlVariant::HASKELL => self.write("intrinsicPop")?,
+                    _ => self.write("intrinsic_pop")?,
+                },
+                ArrayOp::Reserve => match self.variant {
+                    MlVariant::HASKELL => self.write("uncurry intrinsicReserve")?,
+                    _ => self.write("intrinsic_reserve")?,
+                },
             },
             GlobalId::IoOp(io_op) => match io_op {
                 IoOp::Input => self.write("input")?,
@@ -317,8 +542,14 @@ impl<'a, 'b> Context<'a, 'b> {
             GlobalId::Ctor(type_id, variant_id) => match type_id {
                 TypeId::Bool => {
                     let bool_name = match variant_id.0 {
-                        0 => "false",
-                        1 => "true",
+                        0 => match self.variant {
+                            MlVariant::HASKELL => "False",
+                            _ => "false",
+                        },
+                        1 => match self.variant {
+                            MlVariant::HASKELL => "True",
+                            _ => "true",
+                        },
                         _ => unreachable!(),
                     };
                     self.write(bool_name)?;
@@ -399,17 +630,22 @@ impl<'a, 'b> Context<'a, 'b> {
                     MlVariant::SML => {
                         self.write("fn (")?;
                     }
+                    MlVariant::HASKELL => {
+                        self.write("\\ ")?;
+                    }
                 }
                 let num_locals = self.write_pattern(pattern)?;
                 self.add_indent();
                 self.add_locals(num_locals);
-                self.write(") ")?;
                 match self.variant {
                     MlVariant::OCAML => {
-                        self.write("-> ")?;
+                        self.write(") -> ")?;
                     }
                     MlVariant::SML => {
-                        self.write("=> ")?;
+                        self.write(") => ")?;
+                    }
+                    MlVariant::HASKELL => {
+                        self.write(" -> ")?;
                     }
                 }
                 self.write_expr(body, Precedence::Top)?;
@@ -433,13 +669,31 @@ impl<'a, 'b> Context<'a, 'b> {
                         self.write_expr(expr, Precedence::App)?;
                         self.write(" of")?;
                     }
+                    MlVariant::HASKELL => {
+                        self.write("case ")?;
+                        self.write_expr(expr, Precedence::App)?;
+                        self.write(" of")?;
+                    }
                 }
                 for (i, (pattern, expr)) in patterns.iter().enumerate() {
-                    self.writeln()?;
-                    if i == 0 {
-                        self.write("  ")?;
-                    } else {
-                        self.write("| ")?;
+                    if self.variant != MlVariant::HASKELL {
+                        self.writeln()?;
+                    } else if i != 0 {
+                        self.write("; ")?;
+                    }
+                    match self.variant {
+                        MlVariant::OCAML | MlVariant::SML => {
+                            if i == 0 {
+                                self.write("  ")?;
+                            } else {
+                                self.write("| ")?;
+                            }
+                        }
+                        MlVariant::HASKELL => {
+                            if i == 0 {
+                                self.write(" ")?;
+                            }
+                        }
                     }
 
                     let num_locals = self.write_pattern(pattern)?;
@@ -453,6 +707,9 @@ impl<'a, 'b> Context<'a, 'b> {
                         MlVariant::SML => {
                             self.write(" => ")?;
                         }
+                        MlVariant::HASKELL => {
+                            self.write(" -> ")?;
+                        }
                     }
                     self.write_expr(expr, Precedence::App)?;
                     self.remove_indent();
@@ -461,36 +718,64 @@ impl<'a, 'b> Context<'a, 'b> {
             }
             Expr::LetMany(bindings, expr) => {
                 let mut total_locals = 0;
-                self.write("let")?;
-                self.add_indent();
-
-                for (i, binding) in bindings.iter().enumerate() {
-                    self.writeln()?;
-                    match self.variant {
-                        MlVariant::OCAML => {
-                            if i != 0 {
-                                self.write("in let ")?;
+                match self.variant {
+                    MlVariant::HASKELL => {
+                        self.num_ignored = 0;
+                        self.write("let ")?;
+                        let mut lnum_ignored= 0;
+                        for (i, binding) in bindings.iter().enumerate() {
+                            if i > 0 {
+                                self.write("; ")?;
                             }
+                            let num_locals = self.write_pattern(&binding.0)?;
+                            lnum_ignored = self.num_ignored;
+                            total_locals = total_locals + num_locals;
+                            self.write(" = ")?;
+                            self.write_expr(&binding.1, Precedence::Fun)?;
+                            self.add_locals(num_locals);
                         }
-                        MlVariant::SML => {
-                            self.write("val ")?;
+                        self.write(" in ")?;
+                        for i in 0..lnum_ignored {
+                            self.write("l_")?;
+                            self.write(i)?;
+                            self.write(" `seq` ")?;
                         }
+                        self.write_expr(expr, Precedence::Fun)?;
+                    },
+                    _ => {
+                        self.write("let")?;
+                        self.add_indent();
+
+                        for (i, binding) in bindings.iter().enumerate() {
+                            self.writeln()?;
+                            match self.variant {
+                                MlVariant::OCAML => {
+                                    if i != 0 {
+                                        self.write("in let ")?;
+                                    }
+                                }
+                                MlVariant::SML => {
+                                    self.write("val ")?;
+                                }
+                                _ => unreachable!()
+                            }
+                            let num_locals = self.write_pattern(&binding.0)?;
+                            total_locals = total_locals + num_locals;
+                            self.write(" = ")?;
+                            self.write_expr(&binding.1, Precedence::Fun)?;
+                            self.add_locals(num_locals);
+                        }
+                        self.remove_indent();
+                        self.writeln()?;
+                        self.write("in")?;
+                        self.add_indent();
+
+                        self.writeln()?;
+                        self.write_expr(expr, Precedence::Fun)?;
+
+                        self.remove_indent();
                     }
-                    let num_locals = self.write_pattern(&binding.0)?;
-                    total_locals = total_locals + num_locals;
-                    self.write(" = ")?;
-                    self.write_expr(&binding.1, Precedence::Fun)?;
-                    self.add_locals(num_locals);
                 }
-                self.remove_indent();
-                self.writeln()?;
-                self.write("in")?;
-                self.add_indent();
-
-                self.writeln()?;
-                self.write_expr(expr, Precedence::Fun)?;
-
-                self.remove_indent();
                 self.remove_locals(total_locals);
 
                 if let MlVariant::SML = self.variant {
@@ -499,33 +784,35 @@ impl<'a, 'b> Context<'a, 'b> {
                 }
             }
             Expr::ArrayLit(_type, elems) => {
-                self.write("PersistentArray.fromList ")?;
                 match self.variant {
                     MlVariant::OCAML => {
-                        self.write("[|")?;
-                    }
-                    MlVariant::SML => {
-                        self.write("[")?;
-                    }
-                }
-                for (i, elem) in elems.iter().enumerate() {
-                    self.write_expr(elem, Precedence::Top)?;
-                    if i != elems.len() - 1 {
-                        match self.variant {
-                            MlVariant::OCAML => {
+                        self.write("PersistentArray.fromList [|")?;
+                        for (i, elem) in elems.iter().enumerate() {
+                            self.write_expr(elem, Precedence::Top)?;
+                            if i != elems.len() - 1 {
                                 self.write("; ")?;
                             }
-                            MlVariant::SML => {
-                                self.write(", ")?;
-                            }
                         }
-                    }
-                }
-                match self.variant {
-                    MlVariant::OCAML => {
                         self.write("|]")?;
                     }
                     MlVariant::SML => {
+                        self.write("PersistentArray.fromList [")?;
+                        for (i, elem) in elems.iter().enumerate() {
+                            self.write_expr(elem, Precedence::Top)?;
+                            if i != elems.len() - 1 {
+                                self.write(", ")?;
+                            }
+                        }
+                        self.write("]")?;
+                    }
+                    MlVariant::HASKELL => {
+                        self.write("[")?;
+                        for (i, elem) in elems.iter().enumerate() {
+                            self.write_expr(elem, Precedence::Top)?;
+                            if i != elems.len() - 1 {
+                                self.write(", ")?;
+                            }
+                        }
                         self.write("]")?;
                     }
                 }
@@ -578,6 +865,9 @@ impl<'a, 'b> Context<'a, 'b> {
                 }
                 self.write("\"")?;
             }
+            MlVariant::HASKELL => {
+                self.write(byte)?;
+            }
         }
         Ok(())
     }
@@ -610,43 +900,78 @@ impl<'a, 'b> Context<'a, 'b> {
                 MlVariant::SML => {
                     self.write("datatype ")?;
                 }
-            }
-        } else {
-            self.write("and ")?;
-        }
-
-        if def.num_params == 1 {
-            self.write_type_var(&TypeParamId(0))?;
-            self.write(" ")?;
-        } else if def.num_params > 1 {
-            self.write("(")?;
-            for type_arg in 0..def.num_params {
-                self.write_type_var(&TypeParamId(type_arg))?;
-                if type_arg != def.num_params - 1 {
-                    self.write(", ")?;
+                MlVariant::HASKELL => {
+                    self.write("data ")?;
                 }
             }
-            self.write(") ")?;
+        } else {
+            if self.variant != MlVariant::HASKELL {
+                self.write("and ")?;
+            }
         }
-        self.write(
-            &self.prog.custom_type_symbols[type_id]
-                .type_name
-                .0
-                .to_lowercase(),
-        )?;
-        self.write(" = ")?;
+
+        if self.variant != MlVariant::HASKELL {
+            if def.num_params == 1 {
+                self.write_type_var(&TypeParamId(0))?;
+                self.write(" ")?;
+            } else if def.num_params > 1 {
+                self.write("(")?;
+                for type_arg in 0..def.num_params {
+                    self.write_type_var(&TypeParamId(type_arg))?;
+                    if type_arg != def.num_params - 1 {
+                        self.write(", ")?;
+                    }
+                }
+                self.write(") ")?;
+            }
+            self.write(
+                &self.prog.custom_type_symbols[type_id]
+                    .type_name
+                    .0
+                    .to_lowercase(),
+            )?;
+        } else {
+            let name = &self.prog.custom_type_symbols[type_id].type_name.0;
+            if !name.is_empty() && name.chars().next().unwrap().is_uppercase() {
+                self.write(name)?;
+            } else {
+                let capitalized = name.chars().next().map_or(String::new(), |c| {
+                    c.to_uppercase().collect::<String>() + &name[c.len_utf8()..]
+                });
+                self.write(&capitalized)?;
+            }
+            for type_arg in 0..def.num_params {
+                self.write(" ")?;
+                self.write_type_var(&TypeParamId(type_arg))?;
+            }
+        }
+        if self.variant != MlVariant::HASKELL {
+            self.write(" = ")?;
+        }
         self.writeln()?;
         for (i, (variant_id, variant)) in def.variants.iter().enumerate() {
             if i == 0 {
-                self.write("  ")?;
+                if self.variant == MlVariant::HASKELL {
+                    self.write("  = ")?;
+                } else {
+                    self.write("  ")?;
+                }
             } else {
-                self.write("| ")?;
+                if self.variant == MlVariant::HASKELL {
+                    self.write("  | ")?;
+                } else {
+                    self.write("| ")?;
+                }
             }
 
             match variant {
                 Some(type_arg) => {
                     self.write_variant(type_id, variant_id)?;
-                    self.write(" of ")?;
+                    if self.variant == MlVariant::HASKELL {
+                        self.write(" ")?;
+                    } else {
+                        self.write(" of ")?;
+                    }
                     self.write_type(type_arg, Precedence::App)?;
                 }
                 None => self.write_variant(type_id, variant_id)?,
@@ -664,9 +989,11 @@ impl<'a, 'b> Context<'a, 'b> {
     }
 
     fn write_program(&mut self, prog: &Program) -> io::Result<()> {
-        self.write("(* Lines 1-150ish are prelude, included in every generated program. *)\n")?;
-        self.write("(* The generated program begins around line 150. *)")?;
-        self.writeln()?;
+        if self.variant != MlVariant::HASKELL {
+            self.write("(* Lines 1-150ish are prelude, included in every generated program. *)\n")?;
+            self.write("(* The generated program begins around line 150. *)")?;
+            self.writeln()?;
+        }
         match self.variant {
             MlVariant::OCAML => {
                 self.write(PRELUDE_PERSISTENT_OCAML)?;
@@ -677,6 +1004,9 @@ impl<'a, 'b> Context<'a, 'b> {
                 self.write(PRELUDE_PERSISTENT_SML)?;
                 self.writeln()?;
                 self.write(PRELUDE_SML)?;
+            }
+            MlVariant::HASKELL => {
+                self.write(PRELUDE_HASKELL)?;
             }
         }
         self.writeln()?;
@@ -771,9 +1101,9 @@ impl<'a, 'b> Context<'a, 'b> {
                                 self.write(" = ref 0")?;
                                 self.writeln()?;
                             }
+                            MlVariant::HASKELL => {}
                         }
                     }
-
                     if i == 0 {
                         match self.variant {
                             MlVariant::OCAML => {
@@ -782,15 +1112,47 @@ impl<'a, 'b> Context<'a, 'b> {
                             MlVariant::SML => {
                                 self.write("fun ")?;
                             }
+                            MlVariant::HASKELL => {
+                                self.write_identifier(*id)?;
+                                self.write(" :: ")?;
+                                fn pattern_to_type(x: &Pattern) -> Type {
+                                    match x {
+                                        Pattern::Any(t) => t.clone(),
+                                        Pattern::Var(t) => t.clone(),
+                                        Pattern::Tuple(pats) => {
+                                            Type::Tuple(pats.iter().map(|p| pattern_to_type(&p)).collect())
+                                        }
+                                        Pattern::Ctor(type_id, type_args, _, _) => {
+                                            Type::App(type_id.clone(), type_args.to_vec())
+                                        }
+                                        Pattern::ByteConst(_) => Type::App(TypeId::Byte, Vec::new()),
+                                        Pattern::IntConst(_) => Type::App(TypeId::Int, Vec::new()),
+                                        Pattern::FloatConst(_) => Type::App(TypeId::Float, Vec::new()),
+                                        Pattern::Span(_, _, p) => pattern_to_type(p),
+                                    }
+                                }
+                                self.write_type(&pattern_to_type(pattern), Precedence::Top)?;
+                                self.write(" -> ")?;
+                                self.write_type(ret_type, Precedence::Top)?;
+                                self.writeln()?;
+                            }
                         }
                     } else {
-                        self.write("and ")?;
+                        if self.variant != MlVariant::HASKELL {
+                            self.write("and ")?;
+                        }
                     }
                     self.write_identifier(*id)?;
-                    self.write(" (")?;
-                    let num_locals = self.write_pattern(&pattern)?;
-                    self.write("): ")?;
-                    self.write_type(&ret_type, Precedence::Top)?;
+                    let num_locals: usize;
+                    if self.variant != MlVariant::HASKELL {
+                        self.write(" (")?;
+                        num_locals = self.write_pattern(&pattern)?;
+                        self.write("): ")?;
+                        self.write_type(&ret_type, Precedence::Top)?;
+                    } else {
+                        self.write(" ")?;
+                        num_locals = self.write_pattern(&pattern)?;
+                    }
                     if let Some(_) = prof {
                         match self.variant {
                             MlVariant::OCAML => {
@@ -799,6 +1161,7 @@ impl<'a, 'b> Context<'a, 'b> {
                             MlVariant::SML => {
                                 self.write(" = let val start = Time.now () val res =")?;
                             }
+                            MlVariant::HASKELL => {}
                         }
                     } else {
                         self.write(" =")?;
@@ -836,6 +1199,7 @@ impl<'a, 'b> Context<'a, 'b> {
                                 self.write(id.0)?;
                                 self.write(" in res end")?;
                             }
+                            MlVariant::HASKELL => {}
                         }
                     }
                 } else {
@@ -847,13 +1211,25 @@ impl<'a, 'b> Context<'a, 'b> {
                             MlVariant::SML => {
                                 self.write("fun ")?;
                             }
+                            MlVariant::HASKELL => {
+                                self.write_identifier(*id)?;
+                                self.write(" :: () -> ")?;
+                                self.write_type(&val.scheme.body, Precedence::Top)?;
+                                self.writeln()?;
+                            }
                         }
                     } else {
-                        self.write("and ")?;
+                        if self.variant != MlVariant::HASKELL {
+                            self.write("and ")?;
+                        }
                     }
                     self.write_identifier(*id)?;
-                    self.write(" (): ")?;
-                    self.write_type(&val.scheme.body, Precedence::Top)?;
+                    if self.variant	!= MlVariant::HASKELL {
+                        self.write(" (): ")?;
+                        self.write_type(&val.scheme.body, Precedence::Top)?;
+                    } else {
+                        self.write(" _")?;
+                    }
                     self.write(" =")?;
                     self.add_indent();
                     self.writeln()?;
@@ -874,9 +1250,18 @@ impl<'a, 'b> Context<'a, 'b> {
             MlVariant::SML => {
                 self.write("val _ = main_")?;
             }
+            MlVariant::HASKELL => {
+                self.write("main :: IO ()")?;
+                self.writeln()?;
+                self.write("main = main_")?;
+            }
         }
         self.write(prog.main.0)?;
-        self.write(" ();")?;
+        if self.variant != MlVariant::HASKELL {
+            self.write(" ();")?;
+        } else {
+            self.write(" () `seq` return ()")?;
+        }
         self.writeln()?;
 
         if !profile_points.is_empty() {
@@ -952,6 +1337,7 @@ impl<'a, 'b> Context<'a, 'b> {
                     )?;
                     self.writeln()?;
                 }
+                MlVariant::HASKELL => {}
             }
         }
         Ok(())
@@ -960,6 +1346,7 @@ impl<'a, 'b> Context<'a, 'b> {
 
 const PRELUDE_SML: &str = include_str!("prelude.sml");
 const PRELUDE_OCAML: &str = include_str!("prelude.ml");
+const PRELUDE_HASKELL: &str = include_str!("prelude.hs");
 
 // TODO: Add a flag to control whether we use immutable/mutable arrays in the generated SML code.
 // We hard-code mutable for now because it's sufficient for the benchmarks we're interested in.
@@ -1051,6 +1438,7 @@ pub fn write_sml_program(w: &mut dyn Write, program: &Program) -> io::Result<()>
         writer: w,
         indentation: 0,
         num_locals: 0,
+        num_ignored: 0,
         prog: program,
     };
     context.write_program(program)?;
@@ -1063,6 +1451,20 @@ pub fn write_ocaml_program(w: &mut dyn Write, program: &Program) -> io::Result<(
         writer: w,
         indentation: 0,
         num_locals: 0,
+        num_ignored: 0,
+        prog: program,
+    };
+    context.write_program(program)?;
+    Ok(())
+}
+
+pub fn write_haskell_program(w: &mut dyn Write, program: &Program) -> io::Result<()> {
+    let mut context = Context {
+        variant: MlVariant::HASKELL,
+        writer: w,
+        indentation: 0,
+        num_locals: 0,
+        num_ignored: 0,
         prog: program,
     };
     context.write_program(program)?;
