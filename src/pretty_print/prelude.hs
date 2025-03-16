@@ -1,4 +1,4 @@
-import Data.Bits (Bits, (.&.), (.|.), shiftL, shiftR)
+import Data.Bits (Bits, (.&.), (.|.), shiftL, shiftR, xor)
 import Data.Char as C
 import Data.Int (Int64, Int8)
 import Data.Vector.Persistent (Vector(..))

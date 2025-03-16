@@ -124,7 +124,7 @@ impl<'a, 'b> Context<'a, 'b> {
             },
             TypeId::Array => match self.variant {
                 MlVariant::OCAML | MlVariant::SML => self.write("PersistentArray.array")?,
-                MlVariant::HASKELL => self.write("[]")?,
+                MlVariant::HASKELL => self.write("Vector ")?,
             },
             TypeId::Custom(type_id) => {
                 if self.variant == MlVariant::HASKELL {
@@ -175,9 +175,9 @@ impl<'a, 'b> Context<'a, 'b> {
                         match type_id {
                             TypeId::Array => {
                                 if args.len() == 1 {
-                                    self.write("[")?;
-                                    self.write_type(&args[0], Precedence::Top)?;
-                                    self.write("]")?;
+                                    self.write("(Vector ")?;
+                                    self.write_type(&args[0], Precedence::Var)?;
+                                    self.write(") ")?;
                                     return if precedence > my_precedence {
                                         self.write(")")?;
                                         Ok(())
@@ -806,14 +806,14 @@ impl<'a, 'b> Context<'a, 'b> {
                         self.write("]")?;
                     }
                     MlVariant::HASKELL => {
-                        self.write("[")?;
+                        self.write("(V.fromList [")?;
                         for (i, elem) in elems.iter().enumerate() {
                             self.write_expr(elem, Precedence::Top)?;
                             if i != elems.len() - 1 {
                                 self.write(", ")?;
                             }
                         }
-                        self.write("]")?;
+                        self.write("])")?;
                     }
                 }
             }
