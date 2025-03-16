@@ -143,9 +143,9 @@ impl<'a, 'b> Context<'a, 'b> {
                     self.write(" PersistentArray.array")?;
                 }
                 Variant::HASKELL => {
-                    self.write("[")?;
+                    self.write("(Vector ")?;
                     self.write_type(elem_type, Precedence::Var)?;
-                    self.write("] ")?;
+                    self.write(") ")?;
                 }
             },
             Type::HoleArray(elem_type) => match self.variant {
@@ -163,9 +163,8 @@ impl<'a, 'b> Context<'a, 'b> {
                 Variant::HASKELL => {
                     self.write("(")?;
                     self.write_type(elem_type, Precedence::App)?;
-                    self.write(" -> [")?;
+                    self.write(" -> Vector ")?;
                     self.write_type(elem_type, Precedence::Var)?;
-                    self.write("]")?;
                     self.write(")")?;
                 }
             },
@@ -278,7 +277,7 @@ impl<'a, 'b> Context<'a, 'b> {
                 let variant_name = &(type_symbols.variant_symbols[resolved_ast::VariantId(variant_id.0)]
                     .variant_name
                     .0);
-                
+
                 match self.variant {
                     Variant::HASKELL => {
                         if !variant_name.is_empty() && variant_name.chars().next().unwrap().is_uppercase() {
@@ -954,7 +953,7 @@ impl<'a, 'b> Context<'a, 'b> {
                     self.add_locals(num_locals);
                 }
                 self.remove_indent();
-                
+
                 match self.variant {
                     Variant::HASKELL => {
                         self.write(" in ")?;
@@ -974,7 +973,7 @@ impl<'a, 'b> Context<'a, 'b> {
                         self.remove_indent();
                     }
                 }
-                
+
                 self.remove_locals(total_locals);
 
                 if let Variant::SML = self.variant {
@@ -1001,7 +1000,7 @@ impl<'a, 'b> Context<'a, 'b> {
                         self.write("[")?;
                     }
                     Variant::HASKELL => {
-                        self.write("[")?;
+                        self.write("(V.fromList [")?;
                     }
                 }
                 for (i, elem) in elems.iter().enumerate() {
@@ -1034,7 +1033,7 @@ impl<'a, 'b> Context<'a, 'b> {
                         self.write("]")?;
                     }
                     Variant::HASKELL => {
-                        self.write("]")?;
+                        self.write("])")?;
                     }
                 }
             }
@@ -1424,7 +1423,7 @@ impl<'a, 'b> Context<'a, 'b> {
                                 Variant::HASKELL => {
                                     self.write_custom_func_id(*id)?;
                                     self.write(" :: ")?;
-                                        
+
                                     fn pattern_to_type(x: &Pattern) -> Type {
                                         match x {
                                             Pattern::Any(t) => t.clone(),
@@ -1441,12 +1440,12 @@ impl<'a, 'b> Context<'a, 'b> {
                                             Pattern::FloatConst(_) => Type::Num(NumType::Float),
                                         }
                                     }
-                                        
+
                                     self.write_type(&pattern_to_type(&func.arg), Precedence::Top)?;
                                     self.write(" -> ")?;
                                     self.write_type(&func.ret_type, Precedence::Top)?;
                                     self.writeln()?;
-                                    
+
                                     if i != 0 {
                                         self.writeln()?;
                                     }
