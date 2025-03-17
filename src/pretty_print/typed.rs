@@ -440,6 +440,9 @@ impl<'a, 'b> Context<'a, 'b> {
                     TypeId::Float => todo!(),
                     TypeId::Array => todo!(),
                     TypeId::Custom(type_id) => {
+                        if self.variant == MlVariant::HASKELL {
+                            self.write("(")?;
+                        }
                         self.write_variant(*type_id, *variant_id)?;
                     }
                 }
@@ -458,6 +461,12 @@ impl<'a, 'b> Context<'a, 'b> {
                     }
                     None => 0,
                 };
+                if self.variant == MlVariant::HASKELL {
+                    match type_id {
+                        TypeId::Custom(_) => self.write(")")?,
+                        _ => {}
+                    }
+                }
                 Ok(new_locals)
             }
             Pattern::ByteConst(byte) => {

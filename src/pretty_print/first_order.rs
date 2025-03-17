@@ -443,6 +443,9 @@ impl<'a, 'b> Context<'a, 'b> {
                 }
             }
             Pattern::Ctor(type_id, variant_id, maybe_pattern) => {
+                if self.variant == Variant::HASKELL {
+                    self.write("(")?;
+                }
                 self.write_variant(*type_id, *variant_id)?;
                 let new_locals = match maybe_pattern {
                     Some(p) => {
@@ -460,6 +463,9 @@ impl<'a, 'b> Context<'a, 'b> {
                     }
                     None => 0,
                 };
+                if self.variant == Variant::HASKELL {
+                    self.write(")")?;
+                }
                 Ok(new_locals)
             }
             Pattern::BoolConst(b) => {
