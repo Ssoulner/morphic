@@ -50,6 +50,7 @@ pub enum LlvmConfig {
 pub enum MlConfig {
     Sml,
     Ocaml,
+    Haskell,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -253,6 +254,12 @@ impl Config {
                             .help("Compile to OCaml instead of a native binary."),
                     )
                     .arg(
+                        Arg::new("haskell")
+                            .long("haskell")
+                            .action(ArgAction::SetTrue)
+                            .help("Compile to Haskell instead of a native binary."),
+                    )
+                    .arg(
                         Arg::new("output-path")
                             .short('o')
                             .long("output-path")
@@ -369,6 +376,8 @@ impl Config {
                 TargetConfig::Ml(MlConfig::Sml)
             } else if matches.get_flag("ocaml") {
                 TargetConfig::Ml(MlConfig::Ocaml)
+            } else if matches.get_flag("haskell") {
+                TargetConfig::Ml(MlConfig::Haskell)
             } else {
                 TargetConfig::Llvm(LlvmConfig::Native)
             };
