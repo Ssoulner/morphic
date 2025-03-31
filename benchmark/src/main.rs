@@ -309,8 +309,12 @@ fn bench_sample(
     extra_stdin: &str,
     expected_stdout: &str,
 ) {
-    for variant in variants() {
-        let variant_name = format!("{bench_name}_{tag}", tag = variant.tag());
+    for spec_mode in [SpecializationMode::Single, SpecializationMode::Specialize] {
+        let tag = match spec_mode {
+            SpecializationMode::Single => "single",
+            SpecializationMode::Specialize => "specialize",
+        };
+        let variant_name = format!("{bench_name}_{tag}", tag = tag);
         println!("benchmarking {}", variant_name);
 
         let exe_path = std::env::current_dir()
@@ -318,9 +322,8 @@ fn bench_sample(
             .join("out2")
             .join(variant_name.clone());
 
-        let needs_repeat = !variant.record_rc;
-        let needed_iters_0 = if needs_repeat { iters.0 } else { 1 };
-        let needed_iters_1 = if needs_repeat { iters.1 } else { 1 };
+        let needed_iters_0 = iters.0;
+        let needed_iters_1 = iters.1;
 
         let mut results = Vec::new();
         let mut counts: Option<Vec<RcCounts>> = None;
@@ -377,8 +380,11 @@ fn compile_sample(
     profile_mod: &[&str],
     profile_func: &str,
 ) {
-    for variant in variants() {
-        let tag = variant.tag();
+    for spec_mode in [SpecializationMode::Single, SpecializationMode::Specialize] {
+        let tag = match spec_mode {
+            SpecializationMode::Single => "single",
+            SpecializationMode::Specialize => "specialize",
+        };
         println!("compiling {bench_name}_{tag}");
         let (exe_path, _artifact_dir) = build_exe(
             bench_name,
@@ -386,16 +392,35 @@ fn compile_sample(
             src_path.clone(),
             profile_mod,
             profile_func,
-            SpecializationMode::Specialize,
+            spec_mode,
             SampleOptions {
                 is_native: true,
-                rc_strat: variant.rc_strat,
-                profile_record_rc: variant.record_rc,
+                rc_strat: RcStrategy::Default,
+                profile_record_rc: false,
             },
         );
 
         write_binary_size(&format!("{bench_name}_{tag}"), &exe_path);
     }
+    // for variant in variants() {
+    //     let tag = variant.tag();
+    //     println!("compiling {bench_name}_{tag}");
+    //     let (exe_path, _artifact_dir) = build_exe(
+    //         bench_name,
+    //         &tag,
+    //         src_path.clone(),
+    //         profile_mod,
+    //         profile_func,
+    //         SpecializationMode::Specialize,
+    //         SampleOptions {
+    //             is_native: true,
+    //             rc_strat: variant.rc_strat,
+    //             profile_record_rc: variant.record_rc,
+    //         },
+    //     );
+    // 
+    //     write_binary_size(&format!("{bench_name}_{tag}"), &exe_path);
+    // }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -513,6 +538,30 @@ fn sample_parse_json() {
         "bench_parse_json.mor",
         &[],
         "parse_json",
+        stdin,
+        &stdout,
+    );
+}
+
+fn sample_minhs() {
+    // let iters = (10, 100);
+    let iters = (10, 10);
+
+    let stdin = "10000\n";
+    let stdout = "10000\n";
+
+    compile_sample(
+        "bench_minhs.mor",
+        "samples/bench_minhs.mor",
+        &[],
+        "run_program",
+    );
+
+    bench_sample(
+        iters,
+        "bench_minhs.mor",
+        &[],
+        "run_program",
         stdin,
         &stdout,
     );
@@ -770,24 +819,26 @@ fn main() {
     // sample_quicksort();
     // sample_primes();
     sample_primes_sieve();
-    sample_nqueens_iterative();
-    sample_nqueens_functional();
+    // sample_nqueens_iterative();
+    // sample_nqueens_functional();
 
-    sample_parse_json();
+    // sample_parse_json();
 
+    sample_minhs();
+    
     sample_calc();
 
     sample_unify();
 
-    sample_words_trie();
+    // sample_words_trie();
 
-    sample_text_stats();
+    // sample_text_stats();
 
-    sample_lisp();
+    // sample_lisp();
 
-    sample_cfold();
-    sample_deriv();
-    sample_rbtree();
+    // sample_cfold();
+    // sample_deriv();
+    // sample_rbtree();
 
-    sample_rbtreeck();
+    // sample_rbtreeck();
 }

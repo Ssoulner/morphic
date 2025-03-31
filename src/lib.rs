@@ -281,6 +281,14 @@ fn compile_to_first_order_ast(
             .map_err(ErrorKind::WriteIrFailed)?;
     }
 
+    if let Some(artifact_dir) = artifact_dir {
+        let mut out_file = fs::File::create(artifact_dir.artifact_path("typed.hs"))
+            .map_err(ErrorKind::WriteIrFailed)?;
+
+        pretty_print::typed::write_haskell_program(&mut out_file, &typed)
+            .map_err(ErrorKind::WriteIrFailed)?;
+    }
+
     let mono = monomorphize::monomorphize(typed);
 
     if let Some(artifact_dir) = artifact_dir {
@@ -341,6 +349,12 @@ fn compile_to_first_order_ast(
             .map_err(ErrorKind::WriteIrFailed)?;
 
         pretty_print::first_order::write_morphic_program(&mut out_file, &first_order)
+            .map_err(ErrorKind::WriteIrFailed)?;
+
+        let mut out_file = fs::File::create(artifact_dir.artifact_path("first_order.hs"))
+            .map_err(ErrorKind::WriteIrFailed)?;
+
+        pretty_print::first_order::write_haskell_program(&mut out_file, &first_order)
             .map_err(ErrorKind::WriteIrFailed)?;
     }
 
