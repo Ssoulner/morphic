@@ -43,9 +43,6 @@ compareMessages(m1: Message, m2: Message): Ord.Ordering =
 eqMessage(m1: Message, m2: Message): Bool =
   getEnumIndex(m1) = getEnumIndex(m2)
 
-// sortMessages(ms: Array Message): Array Message =
-//   sortBy 
-
 pub type ParseError {
   pub ParseError(SourcePos, Array Message)
 }
@@ -55,62 +52,27 @@ errorPos(e: ParseError): SourcePos =
 
 // -- | Extracts the list of error messages from the parse error
 
-// errorMessages :: ParseError -> [Message]
-// errorMessages (ParseError _pos msgs)
-//     = sort msgs
 pub errorMessages(e: ParseError): Array Message =
   let ParseError(_, msgs) = e in Array.sortBy(ordMessage, msgs)
-
-// errorIsUnknown :: ParseError -> Bool
-// errorIsUnknown (ParseError _pos msgs)
-//     = null msgs
 
 // -- < Create parse errors
 pub errorIsUnknown(e: ParseError): Bool =
   let ParseError(_, msgs) = e in Array.is_empty(msgs)
 
-// newErrorUnknown :: SourcePos -> ParseError
-// newErrorUnknown pos
-//     = ParseError pos []
 pub newErrorUnknown(pos: SourcePos): ParseError =
   ParseError(pos, Array.from_iter(Iter.empty))
 
-// newErrorMessage :: Message -> SourcePos -> ParseError
-// newErrorMessage msg pos
-//     = ParseError pos [msg]
 pub newErrorMessage(msg: Message, pos: SourcePos): ParseError = ParseError(pos, [msg])
 
-// addErrorMessage :: Message -> ParseError -> ParseError
-// addErrorMessage msg (ParseError pos msgs)
-//     = ParseError pos (msg:msgs)
 pub addErrorMessage(msg: Message, e: ParseError): ParseError =
   let ParseError(pos, msgs) = e in ParseError(pos, Array.push_front(msg, msgs))
 
-// setErrorPos :: SourcePos -> ParseError -> ParseError
-// setErrorPos pos (ParseError _ msgs)
-//     = ParseError pos msgs
 setErrorPos(pos: SourcePos, e: ParseError): ParseError =
   let ParseError(_, msgs) = e in ParseError(pos, msgs)
 
-// setErrorMessage :: Message -> ParseError -> ParseError
-// setErrorMessage msg (ParseError pos msgs)
-//     = ParseError pos (msg : filter (msg /=) msgs)
 pub setErrorMessage(msg: Message, e: ParseError): ParseError =
   let ParseError(pos, msgs) = e in ParseError(pos, Array.push_front(msg, Array.from_iter(Iter.filter(Iter.items(msgs), \msg2 -> eqMessage(msg, msg2)))))
 
-// mergeError :: ParseError -> ParseError -> ParseError
-// mergeError e1@(ParseError pos1 msgs1) e2@(ParseError pos2 msgs2)
-//     -- prefer meaningful errors
-//     | null msgs2 && not (null msgs1) = e1
-//     | null msgs1 && not (null msgs2) = e2
-//     | otherwise
-//       -- perfectly we'd compare the consumed token count
-//       -- https://github.com/haskell/parsec/issues/175
-//     = case compareErrorPos pos1 pos2 of
-//         -- select the longest match
-//         EQ -> ParseError pos1 (msgs1 ++ msgs2)
-//         GT -> e1
-//         LT -> e2
 pub mergeError(e1: ParseError, e2: ParseError): ParseError =
   let ParseError(pos1, msgs1) = e1 in
   let ParseError(pos2, msgs2) = e2 in
@@ -126,8 +88,6 @@ pub mergeError(e1: ParseError, e2: ParseError): ParseError =
     }
   }
 
-// compareErrorPos :: SourcePos -> SourcePos -> Ordering
-// compareErrorPos x y = Mon.mappend (compare (sourceLine x) (sourceLine y)) (compare (sourceColumn x) (sourceColumn y))
 compareErrorPos(x: Pos.SourcePos, y: Pos.SourcePos): Ord.Ordering =
   let Pos.SourcePos(_,lineX,colX) = x in
   let Pos.SourcePos(_,lineY,colY) = y in
@@ -139,73 +99,7 @@ compareErrorPos(x: Pos.SourcePos, y: Pos.SourcePos): Ord.Ordering =
 
 pub showParseError(err: ParseError): Array Byte =
   Pos.showPos(errorPos(err)) |> Array.concat(":") |> Array.concat(showErrorMessages("or", "unknown parse error", "expecting", "unexpected", "end of input", errorMessages(err))) |> Array.concat("\n")
-// instance Show ParseError where
-//     show err
-//         = show (errorPos err) ++ ":" ++
-//           showErrorMessages "or" "unknown parse error"
-//                             "expecting" "unexpected" "end of input"
-//                            (errorMessages err)
 
-// instance Eq ParseError where
-//     l == r
-//         = errorPos l == errorPos r && messageStrs l == messageStrs r
-//         where
-//           messageStrs = map messageString . errorMessages
-
-// -- | @since 3.1.17.0
-// instance Exception ParseError
-
-// -- Language independent show function
-
-// --  TODO
-// -- < The standard function for showing error messages. Formats a list of
-// --    error messages in English. This function is used in the |Show|
-// --    instance of |ParseError <#ParseError>|. The resulting string will be
-// --    formatted like:
-// --
-// --    |unexpected /{The first UnExpect or a SysUnExpect message}/;
-// --    expecting /{comma separated list of Expect messages}/;
-// --    /{comma separated list of Message messages}/
-
-// showErrorMessages ::
-//     String -> String -> String -> String -> String -> [Message] -> String
-// showErrorMessages msgOr msgUnknown msgExpecting msgUnExpected msgEndOfInput msgs
-//     | null msgs = msgUnknown
-//     | otherwise = concat $ map ("\n"++) $ clean $
-//                  [showSysUnExpect,showUnExpect,showExpect,showMessages]
-//     where
-//       (sysUnExpect,msgs1) = span ((SysUnExpect "") ==) msgs
-//       (unExpect,msgs2)    = span ((UnExpect    "") ==) msgs1
-//       (expect,messages)   = span ((Expect      "") ==) msgs2
-
-//       showExpect      = showMany msgExpecting expect
-//       showUnExpect    = showMany msgUnExpected unExpect
-//       showSysUnExpect
-//           | not (null unExpect)      = ""
-//           | []      <- sysUnExpect   = ""
-//           | msg : _ <- sysUnExpect
-//           , null (messageString msg) = msgUnExpected ++ " " ++ msgEndOfInput
-//           | msg : _ <- sysUnExpect   = msgUnExpected ++ " " ++ messageString msg
-
-//       showMessages      = showMany "" messages
-
-//       -- helpers
-//       showMany pre msgs3 = case clean (map messageString msgs3) of
-//                             [] -> ""
-//                             ms | null pre  -> commasOr ms
-//                                | otherwise -> pre ++ " " ++ commasOr ms
-
-//       commasOr []       = ""
-//       commasOr [m]      = m
-//       commasOr ms       = commaSep (init ms) ++ " " ++ msgOr ++ " " ++ last ms
-
-//       commaSep          = separate ", " . clean
-
-//       separate   _ []     = ""
-//       separate   _ [m]    = m
-//       separate sep (m:ms) = m ++ sep ++ separate sep ms
-
-//       clean             = nub . filter (not . null)
 showErrorMessages(msgOr: Array Byte, msgUnknown: Array Byte, msgExpecting: Array Byte, msgUnExpected: Array Byte, msgEndOfInput: Array Byte, msgs: Array Message): Array Byte =
   if Array.is_empty(msgs) {
     msgUnknown
