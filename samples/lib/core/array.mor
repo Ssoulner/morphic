@@ -219,10 +219,10 @@ pub elem(a: a, arr: Array a, eqA: (a, a) -> Bool): Bool =
     eqA(a, a1)
   })
 
-pub sortBy(ord: Ord.Ord a, xs: Array a): Array a =
+pub sortBy(ord: Ord.ORD a, xs: Array a): Array a =
   foldl(xs, [], \(ys, x) -> insertBy(ord, x, ys))
 
-pub insertBy(ord: Ord.Ord a, x: a, ys: Array a): Array a =
+pub insertBy(ord: Ord.ORD a, x: a, ys: Array a): Array a =
   if is_empty(ys) {
     push(ys, x)
   } else {
@@ -230,7 +230,7 @@ pub insertBy(ord: Ord.Ord a, x: a, ys: Array a): Array a =
     let y = get(ys, 0) in
     let o = Ord.compare(ord, x, y) in
     match o {
-      Ord.GT -> push_front(y, insertBy(ord, x, ys2)),
+      Ord.GThan -> push_front(y, insertBy(ord, x, ys2)),
       _  -> push_front(x, ys)
     }
   }

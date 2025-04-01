@@ -34,6 +34,6 @@ pub module Combinator = file "parsec/combinator.mor" with { Core, Pos, Error, Pr
 proc main(): () =
   let inp = "innPut" in
   match Prim.parse(Char.string1("inPut"), "Input file", Iter.items(inp)) {
-    Either.Left(err) -> do output(Error.showParseError(err)),
-    Either.Right(res) -> do output("DONE!")
+    Either.Bad(err) -> do output(Error.showParseError(err)),
+    Either.Good(res) -> do output("DONE!")
   }

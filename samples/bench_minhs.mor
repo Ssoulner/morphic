@@ -5,7 +5,7 @@ module Parsec = file "parsec.mor"
         module Array,
         module Iter,
         module Option expose { Option { Some, None } },
-        module Either expose { Either { Left, Right } },
+        module Either expose { BadGood { Bad, Good } },
         module String,
         module Result expose { Result { Ok, Err }, either, unwrap },
         module Func,
@@ -320,7 +320,7 @@ p_apply(): Prim.ParsecT NamedExpression =
 
 // parse_expression(str: Array Byte): Option NamedExpression =
 //   Parse.parse_all(str, p_apply())
-parse_expression(inp: Iter.Iter Byte): Either Error.ParseError NamedExpression =
+parse_expression(inp: Iter.Iter Byte): BadGood Error.ParseError NamedExpression =
   Prim.parse(p_apply(), "MinHS", inp)
 
 type Type {
@@ -659,8 +659,8 @@ run_program(source: Array Byte): Result MinHS (Array Byte) =
   let expr_opt = parse_expression(Iter.items(source)) in
     match expr_opt {
       // Left(err) -> Err(Error.messageString(Array.get(Error.errorMessages(err), 0))),
-      Left(err) -> Err(Error.showParseError(err)),
-      Right(named_expr) ->
+      Bad(err) -> Err(Error.showParseError(err)),
+      Good(named_expr) ->
         let expr = dename_expression(named_expr) in
         let env = Hashmap.empty(Func.id, \(i1, i2) -> i1 = i2) in
         match infer_type(env, expr) {

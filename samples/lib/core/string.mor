@@ -3,30 +3,30 @@ import Option expose { Option { Some, None } }
 import Iter expose { Iter }
 import Ord
 
-pub type Show a {
-  Show(a -> Array Byte)
+pub type SHOW a {
+  SHOW(a -> Array Byte)
 }
 
-pub show(shw: Show a, a: a): Array Byte =
-  let Show(f) = shw in
+pub show(shw: SHOW a, a: a): Array Byte =
+  let SHOW(f) = shw in
   f(a)
 
-pub showChar: Show Byte =
-  Show(\c -> [c])
+pub showChar: SHOW Byte =
+  SHOW(\c -> [c])
 
-pub ordString: Ord.Ord (Array Byte) =
-  Ord.Ord(\(x1, x2) -> compareStrings(Iter.items(x1), Iter.items(x2)))
+pub ordString: Ord.ORD (Array Byte) =
+  Ord.ORD(\(x1, x2) -> compareStrings(Iter.items(x1), Iter.items(x2)))
 
-compareStrings(xs1: Iter.Iter Byte, xs2: Iter.Iter Byte): Ord.Ordering =
+compareStrings(xs1: Iter.Iter Byte, xs2: Iter.Iter Byte): Ord.Order =
   match (Iter.next(xs1), Iter.next(xs2)) {
-    (Option.None, Option.None) -> Ord.EQ,
-    (Option.None, _) -> Ord.LT,
-    (_,Option.None) -> Ord.GT,
+    (Option.None, Option.None) -> Ord.Equal,
+    (Option.None, _) -> Ord.LThan,
+    (_,Option.None) -> Ord.GThan,
     (Option.Some(x1, xs11), Option.Some(x2, xs21)) ->
       match Ord.compare(Ord.ordByte, x1, x2) {
-        Ord.GT -> Ord.GT,
-        Ord.LT -> Ord.LT,
-        Ord.EQ -> compareStrings(xs11, xs21)
+        Ord.GThan -> Ord.GThan,
+        Ord.LThan -> Ord.LThan,
+        Ord.Equal -> compareStrings(xs11, xs21)
       }
   }
 

@@ -34,10 +34,10 @@ pub messageString(message: Message): Array Byte =
     Message(msg) -> msg
   }
 
-ordMessage: Ord.Ord Message =
-  Ord.Ord(\(m1, m2) -> Ord.compare(Ord.ordInts, getEnumIndex(m1), getEnumIndex(m2)))
+ordMessage: Ord.ORD Message =
+  Ord.ORD(\(m1, m2) -> Ord.compare(Ord.ordInts, getEnumIndex(m1), getEnumIndex(m2)))
 
-compareMessages(m1: Message, m2: Message): Ord.Ordering =
+compareMessages(m1: Message, m2: Message): Ord.Order =
   Ord.compare(Ord.ordInts, getEnumIndex(m1), getEnumIndex(m2))
 
 eqMessage(m1: Message, m2: Message): Bool =
@@ -82,19 +82,19 @@ pub mergeError(e1: ParseError, e2: ParseError): ParseError =
     e2
   } else {
     match compareErrorPos(pos1, pos2) {
-      Ord.EQ -> ParseError(pos1, Array.concat(msgs1, msgs2)),
-      Ord.GT -> e1,
-      Ord.LT -> e2
+      Ord.Equal -> ParseError(pos1, Array.concat(msgs1, msgs2)),
+      Ord.GThan -> e1,
+      Ord.LThan -> e2
     }
   }
 
-compareErrorPos(x: Pos.SourcePos, y: Pos.SourcePos): Ord.Ordering =
+compareErrorPos(x: Pos.SourcePos, y: Pos.SourcePos): Ord.Order =
   let Pos.SourcePos(_,lineX,colX) = x in
   let Pos.SourcePos(_,lineY,colY) = y in
   match Ord.compare(Ord.ordInts, lineX, lineY) {
-    Ord.EQ -> Ord.compare(Ord.ordInts, colX, colY),
-    Ord.GT -> Ord.GT,
-    Ord.LT -> Ord.LT
+    Ord.Equal -> Ord.compare(Ord.ordInts, colX, colY),
+    Ord.GThan -> Ord.GThan,
+    Ord.LThan -> Ord.LThan
   }
 
 pub showParseError(err: ParseError): Array Byte =
