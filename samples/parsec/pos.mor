@@ -6,16 +6,10 @@ import Core
     module String
   }
 
-// pub type SourceName = String
-// pub type Line = Int
-// pub type Column = Int
-
-// proc main(): () = do output(Array.concat("Hello, ", "world!"))
 
 pub type SourcePos {
   pub SourcePos (Array Byte, Int, Int)
 }
-  // deriving ( Eq, Ord, Data, Typeable)
 
 newPos(name: Array Byte, line: Int, column: Int): SourcePos = SourcePos(name, line, column)
 
@@ -24,57 +18,41 @@ pub initialPos(name: Array Byte): SourcePos = newPos(name, 1, 1)
 
 // Extracts the name of the source from a source position.
 
-// sourceName :: SourcePos -> Array Byte
-// sourceName (SourcePos name _line _column) = name
 sourceName(sourcePos: SourcePos): Array Byte =
   let SourcePos(name, _, _) = sourcePos in name
 
 // -- | Extracts the line number from a source position.
 
-// sourceLine :: SourcePos -> Line
-// sourceLine (SourcePos _name line _column) = line
 sourceLine(sourcePos: SourcePos) : Int =
   let SourcePos(_,line,_) = sourcePos in line
 
 // -- | Extracts the column number from a source position.
 
-// sourceColumn :: SourcePos -> Column
-// sourceColumn (SourcePos _name _line column) = column
 sourceColumn(sourcePos: SourcePos): Int =
   let SourcePos(_,_,column) = sourcePos in column
 
 // -- | Increments the line number of a source position.
 
-// incSourceLine :: SourcePos -> Line -> SourcePos
-// incSourceLine (SourcePos name line column) n = SourcePos name (line+n) column
 incSourceLine(sourcePos: SourcePos, n: Int): SourcePos =
   let SourcePos(name, line, column) = sourcePos in SourcePos(name, line + n, column)
 
 // -- | Increments the column number of a source position.
 
-// incSourceColumn :: SourcePos -> Column -> SourcePos
-// incSourceColumn (SourcePos name line column) n = SourcePos name line (column+n)
 incSourceColumn(sourcePos: SourcePos, n: Int): SourcePos =
   let SourcePos(name, line, column) = sourcePos in SourcePos(name, line, column + n)
 
 // -- | Set the name of the source.
 
-// setSourceName :: SourcePos -> SourceName -> SourcePos
-// setSourceName (SourcePos _name line column) n = SourcePos n line column
 setSourceName(sourcePos: SourcePos, n: Array Byte): SourcePos =
   let SourcePos(_, line, column) = sourcePos in SourcePos(n, line, column)
 
 // -- | Set the line number of a source position.
 
-// setSourceLine :: SourcePos -> Line -> SourcePos
-// setSourceLine (SourcePos name _line column) n = SourcePos name n column
 setSourceLine(sourcePos: SourcePos, n: Int): SourcePos =
   let SourcePos(name, _, column) = sourcePos in SourcePos(name, n, column)
 
 // -- | Set the column number of a source position.
 
-// setSourceColumn :: SourcePos -> Column -> SourcePos
-// setSourceColumn (SourcePos name line _column) n = SourcePos name line n
 setSourceColumn(sourcePos: SourcePos, n: Int): SourcePos =
   let SourcePos(name, line, _) = sourcePos in SourcePos(name, line, n)
 
@@ -82,9 +60,6 @@ setSourceColumn(sourcePos: SourcePos, n: Int): SourcePos =
 // -- @pos@ by calling 'updatePosChar' on every character in @s@, ie.
 // -- @foldl updatePosChar pos string@.
 
-// updatePosString :: SourcePos -> String -> SourcePos
-// updatePosString pos string
-//     = foldl updatePosChar pos string
 pub updatePosString(sourcePos: SourcePos, txt: Iter.Iter Byte): SourcePos =
   Iter.foldl(txt, sourcePos, updatePosChar)
 
@@ -95,12 +70,6 @@ pub updatePosString(sourcePos: SourcePos, txt: Iter.Iter Byte): SourcePos =
 // -- ((column-1) \`mod\` 8)@. In all other cases, the column is
 // -- incremented by 1.
 
-// updatePosChar   :: SourcePos -> Char -> SourcePos
-// updatePosChar (SourcePos name line column) c
-//     = case c of
-//         '\n' -> SourcePos name (line+1) 1
-//         '\t' -> SourcePos name line (column + 8 - ((column-1) `mod` 8))
-//         _    -> SourcePos name line (column + 1)
 pub updatePosChar(sourcePos: SourcePos, c: Byte): SourcePos =
   let SourcePos(name, line, column) = sourcePos in
   match c {
@@ -117,12 +86,3 @@ pub showPos(pos: SourcePos): Array Byte =
   } else {
     "\"" |> Array.concat(name) |> Array.concat("\"") |> Array.concat(showLineColumn)
   }
-
-// instance Show SourcePos where
-//   show (SourcePos name line column)
-//     | null name = showLineColumn
-//     | otherwise = "\"" ++ name ++ "\" " ++ showLineColumn
-//     where
-//       showLineColumn    = "(line " ++ show line ++
-//                           ", column " ++ show column ++
-//                           ")"
