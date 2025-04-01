@@ -1,14 +1,3 @@
-// module Core = file "lib/core/core.mor"
-//   expose {
-//     module String,
-//     module Func expose { id, compose },
-//     // module Option expose { Option { Some, None } },
-//     module Option,
-//     module Result expose { Result { Ok, Err } },
-//     module Array expose { reduce },
-//     module Iter
-//   }
-
 module Parsec = file "parsec.mor"
   expose {
     module Core
@@ -28,9 +17,9 @@ module Parsec = file "parsec.mor"
   }
 
 module Hashmap = file "lib/hashmap.mor" with { Core }
-  expose {
-    HashMap
-  }
+  expose { HashMap }
+module Bench = file "lib/bench_common.mor" with { Core }
+  expose { repeat }
 
 // whitespace
 ascii_space: Byte = 32b
@@ -689,15 +678,21 @@ run_program(source: Array Byte): Result MinHS (Array Byte) =
 
 
 proc main (): () =
-  // let str = do input() in
-  // let str = "5" in
-  // let str = "if true then 5 else 3" in
-  // let str = "let x :: int = 5 in x" in
-  // let str = "let f :: int -> int = + 5 in f (+ 5 (f 10))" in
-  // let str = "let f :: (int -> int) -> int -> int = fun twice(f) :: (int -> int) -> int -> int = fun twice_inner(x) :: int -> int = f (f x) in f (+ 5) 4" in
-  let num = do input() in // 15000
-  let str = "(fun f(x) :: int -> int = if = x " |> String.concat(num) |> String.concat(" then x else f (+ x 1)) 10") in
-  match run_program(str) {
-    Ok(res) -> do output(minhs_print(res)),
-    Err(message) -> do output(message)
+  match String.string_to_nat(do input()) {
+    Some(reps) ->
+      let str = do input() in
+      match repeat(reps, \() -> run_program(str)) {
+        Some(Ok(res)) -> do output(minhs_print(res)),
+        Some(Err(message)) -> do output(message),
+        None -> do output("Repeated < 1 times")
+      },
+    None -> do output("Enter iteration count and minhs program")
   }
+      // let str = "5" in
+      // let str = "if true then 5 else 3" in
+      // let str = "let x :: int = 5 in x" in
+      // let str = "let f :: int -> int = + 5 in f (+ 5 (f 10))" in
+      // let str = "let f :: (int -> int) -> int -> int = fun twice(f) :: (int -> int) -> int -> int = fun twice_inner(x) :: int -> int = f (f x) in f (+ 5) 4" in
+      // let str = "let k :: int -> int -> int = fun k :: int -> int -> int p = fun k_ :: int -> int q = p in let k1 :: int -> int -> int = fun k1 :: int -> int -> int p = fun k1_ :: int -> int q = q in let i :: int -> int = fun i :: int -> int x = x in let f_true :: int -> int -> int = k in let f_false :: int -> int -> int = k1 in let iF :: (int -> int -> int) -> int -> int -> int = fun iF :: (int -> int -> int) -> int -> int -> int p = fun p_ :: int -> int -> int m = fun p__ :: int -> int n = p m n in let elsE :: int -> int = i in let theN :: int -> int = i in let a :: int -> int -> int = f_true in let b :: int -> int -> int = f_false in iF (a) (theN 7) (elsE 8)" in
+      // let num = do input() in // 15000
+      // let str = "(fun f(x) :: (int -> int) = if = x " |> String.concat(num) |> String.concat(" then x else f (+ x 1)) 10") in
